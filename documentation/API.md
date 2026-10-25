@@ -77,16 +77,18 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
 | Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | **Planned** |
 | Admin seller read API | `GET /admin/seller`, `GET /admin/seller/:id` | Implemented |
+| Admin seller create | `POST /admin/seller` | Implemented |
+| Admin seller update | `PATCH /admin/seller/:id` (any seller field) | Implemented |
+| Admin seller deactivate | `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) | Implemented |
 | Admin sellers page | Admin UI route `/app/sellers` | Implemented |
-| Admin seller mutations | `POST /admin/seller`, `PATCH /admin/seller/:id/{trust,category,social,bio}` | **Planned** |
 | Admin lineage REST | `/admin/lineage*` | **Planned** |
 
 Only these route files exist today:
 
 ```text
 apps/backend/src/api/admin/custom/route.ts
-apps/backend/src/api/admin/seller/route.ts
-apps/backend/src/api/admin/seller/[id]/route.ts
+apps/backend/src/api/admin/seller/route.ts          # GET /admin/seller (list/filter), POST /admin/seller
+apps/backend/src/api/admin/seller/[id]/route.ts    # GET/PATCH/DELETE /admin/seller/:id
 apps/backend/src/api/store/custom/route.ts
 apps/backend/src/api/middlewares.ts
 ```
@@ -196,7 +198,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. Only the auth paths, core store/admin routes, `GET /store/products/{id}`, and the admin seller read paths (`GET /admin/seller`, `GET /admin/seller/{id}`) are actually served today. `/store/seller/*`, custom `POST/PATCH /store/products`, auction, purchase, lineage, admin seller mutations, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. Only the auth paths, core store/admin routes, `GET /store/products/{id}`, and the admin seller paths (`GET /admin/seller`, `GET /admin/seller/{id}`, `POST /admin/seller`, `PATCH /admin/seller/{id}`, `DELETE /admin/seller/{id}`) are actually served today. `/store/seller/*`, custom `POST/PATCH /store/products`, auction, purchase, lineage, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 ```yaml
 openapi: 3.0.3
@@ -756,6 +758,12 @@ paths:
           schema:
             type: string
             enum: [celebrity, influencer, musician, athlete, other]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, inactive]
         - name: limit
           in: query
           required: false
@@ -792,6 +800,65 @@ paths:
         '401':
           description: Missing or invalid admin authentication
 
+    post:
+      tags: [Seller]
+      summary: Create a new seller
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, store_name]
+              properties:
+                handle:
+                  type: string
+                store_name:
+                  type: string
+                avatar_url:
+                  type: string
+                  nullable: true
+                razorpay_account_id:
+                  type: string
+                  nullable: true
+                seller_trust:
+                  type: string
+                  enum: [trusted, untrusted]
+                  default: trusted
+                seller_category:
+                  type: string
+                  enum: [celebrity, influencer, musician, athlete, other]
+                  default: celebrity
+                social_media_handle:
+                  type: string
+                  nullable: true
+                bio:
+                  type: string
+                  nullable: true
+                verification_status:
+                  type: string
+                  enum: [PENDING, VERIFIED]
+                  default: PENDING
+                is_deactivated:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Seller created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seller:
+                    $ref: '#/components/schemas/Seller'
+        '400':
+          description: Missing handle or store_name
+        '401':
+          description: Missing or invalid admin authentication
+
   /admin/seller/{id}:
     get:
       tags: [Seller]
@@ -808,6 +875,93 @@ paths:
       responses:
         '200':
           description: Seller profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seller:
+                    $ref: '#/components/schemas/Seller'
+        '401':
+          description: Missing or invalid admin authentication
+        '404':
+          description: Seller not found
+
+    patch:
+      tags: [Seller]
+      summary: Update a seller (any field)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                handle:
+                  type: string
+                store_name:
+                  type: string
+                avatar_url:
+                  type: string
+                  nullable: true
+                razorpay_account_id:
+                  type: string
+                  nullable: true
+                seller_trust:
+                  type: string
+                  enum: [trusted, untrusted]
+                seller_category:
+                  type: string
+                  enum: [celebrity, influencer, musician, athlete, other]
+                social_media_handle:
+                  type: string
+                  nullable: true
+                bio:
+                  type: string
+                  nullable: true
+                verification_status:
+                  type: string
+                  enum: [PENDING, VERIFIED]
+                is_deactivated:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated seller profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seller:
+                    $ref: '#/components/schemas/Seller'
+        '401':
+          description: Missing or invalid admin authentication
+        '404':
+          description: Seller not found
+
+    delete:
+      tags: [Seller]
+      summary: Deactivate a seller (soft-delete via is_deactivated)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Seller deactivated
           content:
             application/json:
               schema:
@@ -871,16 +1025,14 @@ paths:
 |--------|----------|------|-------------|----------------|--------|
 | GET | `/admin/seller` | Bearer | List sellers (search/filter/paginate) | `200 OK` | Implemented |
 | GET | `/admin/seller/:id` | Bearer | Get seller by ID | `200 OK` | Implemented |
-| POST | `/admin/seller` | Bearer | Create seller | `201 Created` | Planned |
-| PATCH | `/admin/seller/:id/trust` | Bearer | Update trust status (trusted/untrusted) | `200 OK` | Planned |
-| PATCH | `/admin/seller/:id/category` | Bearer | Update seller category | `200 OK` | Planned |
-| PATCH | `/admin/seller/:id/social` | Bearer | Update social media handle | `200 OK` | Planned |
-| PATCH | `/admin/seller/:id/bio` | Bearer | Update seller bio | `200 OK` | Planned |
+| POST | `/admin/seller` | Bearer | Create seller | `201 Created` | Implemented |
+| PATCH | `/admin/seller/:id` | Bearer | Update any seller field | `200 OK` | Implemented |
+| DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | `200 OK` | Implemented |
 | GET | `/admin/lineage` | Bearer | List all lineage entries | `200 OK` | Planned |
 | GET | `/admin/lineage/:id` | Bearer | Get lineage by ID | `200 OK` | Planned |
 | POST | `/admin/lineage` | Bearer | Record lineage transfer | `201 Created` | Planned |
 
-> **Implemented seller reads:** `GET /admin/seller` and `GET /admin/seller/:id` are live. The same data is rendered in the Medusa Admin at **Sellers** (`http://localhost:9000/app/sellers`). Seller mutations remain **Planned**; use the module service or SQL until those routes exist.
+> **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. The same data is rendered in the Medusa Admin at **Sellers** (`http://localhost:9000/app/sellers`). Lineage REST remains **Planned**; use the module service or SQL until those routes exist.
 
 ### Custom Module Service Methods
 
@@ -1078,7 +1230,7 @@ curl -s -X POST http://localhost:9000/auth/customer/emailpass \
 
 ### 6.6 List Sellers in the Admin API (Working Today)
 
-> **Status: IMPLEMENTED** — `GET /admin/seller` and `GET /admin/seller/:id` read the custom seller module. The Medusa Admin UI page is at `http://localhost:9000/app/sellers`.
+> **Status: IMPLEMENTED** — `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` read and mutate the custom seller module. The Medusa Admin UI page is at `http://localhost:9000/app/sellers`.
 
 Get an admin JWT, then call the endpoint:
 
@@ -1140,6 +1292,84 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 The endpoint requires admin authentication (401 without a token). Use `q=snoop`, `trust=untrusted`, and `category=musician` to exercise the filters.
 
 The Admin UI page uses the same API and shows store, handle, category, trust, verification, bio, social handle, and whether a customer account is linked.
+
+### 6.7 Create, Update, and Deactivate Sellers (Working Today)
+
+> **Status: IMPLEMENTED** — `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`).
+
+**Create a seller:**
+
+```http
+POST /admin/seller
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "handle": "rajesh_jewelers",
+  "store_name": "Rajesh Jewelers",
+  "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg",
+  "razorpay_account_id": "ra_connect_rajesh_001",
+  "seller_trust": "untrusted",
+  "seller_category": "other",
+  "social_media_handle": "@rajeshjewelers",
+  "bio": "Family jeweler reselling authenticated pieces."
+}
+```
+
+**Response (201):**
+```json
+{
+  "seller": {
+    "id": "01M5SVK...",
+    "customer_id": null,
+    "handle": "rajesh_jewelers",
+    "store_name": "Rajesh Jewelers",
+    "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg",
+    "razorpay_account_id": "ra_connect_rajesh_001",
+    "seller_trust": "untrusted",
+    "seller_category": "other",
+    "social_media_handle": "@rajeshjewelers",
+    "bio": "Family jeweler reselling authenticated pieces.",
+    "verification_status": "PENDING",
+    "is_deactivated": false,
+    "created_at": "2026-10-25T14:30:11.858Z",
+    "updated_at": "2026-10-25T14:30:11.858Z",
+    "deleted_at": null
+  }
+}
+```
+
+**Update any seller field** (`PATCH /admin/seller/:id` accepts `handle`, `store_name`, `avatar_url`, `razorpay_account_id`, `seller_trust`, `seller_category`, `social_media_handle`, `bio`, `verification_status`, `is_deactivated`):
+
+```http
+PATCH /admin/seller/01M5SVK...
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "seller_trust": "trusted",
+  "seller_category": "musician",
+  "verification_status": "VERIFIED"
+}
+```
+
+**Deactivate a seller** (`DELETE /admin/seller/:id` sets `is_deactivated = true` and returns the updated seller):
+
+```http
+DELETE /admin/seller/01M5SVK...
+Authorization: Bearer <admin_token>
+```
+
+**Response (200):**
+```json
+{
+  "seller": {
+    "id": "01M5SVK...",
+    "is_deactivated": true,
+    ...
+  }
+}
+```
 
 ---
 
@@ -1243,7 +1473,7 @@ Do **not** resolve `sellerModuleService` / `lineageModuleService` — those name
 
 **Generated CRUD:** `listSellers`, `retrieveSeller`, `createSellers`, `updateSellers`, `deleteSellers`.
 
-**Admin read API:** `GET /admin/seller` (filters: `q`, `trust`, `category`, `limit`, `offset`) and `GET /admin/seller/:id`. The Medusa Admin **Sellers** page (`/app/sellers`) consumes the list endpoint. Write routes remain planned.
+**Admin CRUD API:** `GET /admin/seller` (filters: `q`, `trust`, `category`, `status`, `limit`, `offset`), `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`). The Medusa Admin **Sellers** page (`/app/sellers`) consumes the list endpoint. Lineage REST (`/admin/lineage*`) remains planned.
 
 ### Product Lineage Module (`src/modules/lineage`)
 

@@ -151,6 +151,12 @@ EXCEPTION
     WHEN duplicate_column THEN NULL;
 END $$;
 
+DO $$ BEGIN
+    ALTER TABLE seller ADD COLUMN IF NOT EXISTS is_deactivated BOOLEAN NOT NULL DEFAULT FALSE;
+EXCEPTION
+    WHEN duplicate_column THEN NULL;
+END $$;
+
 -- Relax legacy NOT NULL on razorpay_account_id. A seller can exist before
 -- Razorpay Connect onboarding, matching the model's nullable field.
 ALTER TABLE seller ALTER COLUMN razorpay_account_id DROP NOT NULL;

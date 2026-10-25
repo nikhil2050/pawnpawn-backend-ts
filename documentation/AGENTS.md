@@ -46,7 +46,7 @@ Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backen
 │   │   └── src/
 │   │       ├── admin/            # Admin dashboard extensions (routes/sellers/page.tsx, widgets/, i18n/)
 │   │       ├── api/              # API routes: api/store/*, api/admin/* (file-based) + middlewares.ts
-│   │       │                     # GET /admin/seller + /admin/seller/:id are implemented
+│   │       │                     # GET/POST /admin/seller + GET/PATCH/DELETE /admin/seller/:id are implemented
 │   │       ├── jobs/             # Scheduled jobs
 │   │       ├── links/            # Module links between modules
 │   │       ├── migration-scripts/# Data migrations run by db:migrate (e.g. initial-data-seed.ts)
@@ -257,7 +257,7 @@ claude mcp add --transport http medusa-cloud https://cloud.medusajs.com/mcp # or
 - Calling `this.list()` / `this.create()` / `this.update()` inside a `MedusaService` subclass. Generated methods are model-suffixed: `listSellers`, `createSellers`, `updateSellers`, `listProductLineages`, etc.
 - Resolving custom modules as `sellerModuleService` / `lineageModuleService`. Use `container.resolve("seller")` / `container.resolve("lineage")`.
 - Defining custom module table IDs as `UUID`. Medusa generates text IDs, so use `TEXT PRIMARY KEY`; also add `created_at`, `updated_at`, and `deleted_at`.
-- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/admin/custom/route.ts`, and the admin seller reads (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `/store/seller/*`, `/store/purchase`, or admin seller mutations.
+- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/admin/custom/route.ts`, and the admin seller CRUD (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `/store/seller/*`, `/store/purchase`, or `/admin/lineage*`.
 - Seeding buyers with raw `INSERT INTO customer` while expecting them to log in. Register them through `POST /auth/customer/emailpass/register` and `POST /store/customers` so auth identities are created.
 
 ## Off-Limits

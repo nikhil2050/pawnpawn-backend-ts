@@ -22,4 +22,5 @@ export const Seller = model.define("seller", {
   bio: model.text().nullable(),
   
   verification_status: model.enum(["PENDING", "VERIFIED"]).default("PENDING"),
+  is_deactivated: model.boolean().default(false),
 })

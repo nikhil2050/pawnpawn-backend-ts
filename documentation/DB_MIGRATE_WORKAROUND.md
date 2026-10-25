@@ -98,7 +98,7 @@ psql -h localhost -U postgres -d pawnpawn_db -c "\d product"
 
 Look for: `listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'`
 
-### Step 4b: Seed sample data (optional but recommended)
+### Step 5: Seed sample data (optional but recommended)
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql

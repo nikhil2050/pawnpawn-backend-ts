@@ -419,18 +419,22 @@ CURRENT: lineageService.getLineageHistory(productId)
 ```
 
 ### 7. Admin Seller Listing (Implemented)
+
 ```
 IMPLEMENTED: GET /admin/seller           → list/filter sellers (Bearer admin token)
 IMPLEMENTED: GET /admin/seller/:id       → seller detail
+IMPLEMENTED: POST /admin/seller          → create seller
+IMPLEMENTED: PATCH /admin/seller/:id     → update any seller field
+IMPLEMENTED: DELETE /admin/seller/:id    → soft-deactivate (is_deactivated = true)
 IMPLEMENTED: Admin UI /app/sellers       → Sellers sidebar page
 
-Query params: q, trust (trusted|untrusted), category, limit (1-100), offset
+Query params: q, trust (trusted|untrusted), category, status (active|inactive), limit (1-100), offset
 DATA: sellerService.listAndCountSellers(filters, { take, skip, order })
 UI:  apps/backend/src/admin/routes/sellers/page.tsx
 API: apps/backend/src/api/admin/seller/route.ts
      apps/backend/src/api/admin/seller/[id]/route.ts
 
-PLANNED: POST /admin/seller and PATCH /admin/seller/:id/{trust,category,social,bio}
+PLANNED: /admin/lineage*
 ```
 
 ---
@@ -507,8 +511,9 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 |--------|----------|------|-------------|--------|
 | GET | `/admin/seller` | Bearer | List/filter sellers | Implemented |
 | GET | `/admin/seller/:id` | Bearer | Seller detail | Implemented |
-| POST | `/admin/seller` | Bearer | Create seller | Planned |
-| PATCH | `/admin/seller/:id/{trust,category,social,bio}` | Bearer | Seller field updates | Planned |
+| POST | `/admin/seller` | Bearer | Create seller | Implemented |
+| PATCH | `/admin/seller/:id` | Bearer | Update any seller field | Implemented |
+| DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | Implemented |
 | GET/POST | `/admin/lineage`, `/admin/lineage/:id` | Bearer | Lineage CRUD | Planned |
 
 ### Admin UI
@@ -569,4 +574,4 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, custom seller/lineage modules verified, sample data seeded (7 sellers / 5 buyers / 17 products / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller read API + Sellers page implemented, remaining custom REST routes planned*
+*Last sync: Oct 2026 — Medusa v2.22.0, custom seller/lineage modules verified, sample data seeded (7 sellers / 5 buyers / 17 products / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented, remaining custom REST routes planned*

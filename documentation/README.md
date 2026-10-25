@@ -19,8 +19,8 @@ Index for all project documentation. The backend is a Medusa v2.22.0 service in 
 
 - Medusa core routes work: auth (`/auth/*`), store catalog (`GET /store/products`), store customers, admin core.
 - Custom modules work: `container.resolve("seller")` and `container.resolve("lineage")`.
-- Seller data is readable through the admin API (`GET /admin/seller`, `GET /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
-- Custom storefront routes are **planned**: seller onboarding, seller listings, auctions, purchase, lineage, and admin seller mutations. See [`API.md`](./API.md#current-implementation-status).
+- Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
+- Custom storefront routes are **planned**: seller onboarding, seller listings, auctions, purchase, lineage, and `/admin/lineage*`. See [`API.md`](./API.md#current-implementation-status).
 - Database and seed data are verified: 7 sellers, 5 buyers, 17 products, 33 variants, 72 prices, 8 lineage records.
 
 ## Quick Start

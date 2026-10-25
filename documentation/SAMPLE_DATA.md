@@ -2,7 +2,7 @@
 
 Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, and provenance/lineage history.
 
-> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is readable through the admin API (`GET /admin/seller`, `GET /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller mutations and lineage still have no custom REST routes — use the module services (`container.resolve("seller")`, `container.resolve("lineage")`) or SQL. See `API.md` → Current Implementation Status.
+> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Storefront seller routes (`/store/seller/*`, `/store/purchase`, `/store/products/:id/lineage`) and admin lineage routes (`/admin/lineage*`) still have no custom REST routes — use the module services (`container.resolve("seller")`, `container.resolve("lineage")`) or SQL. See `API.md` → Current Implementation Status.
 
 ## Seed
 

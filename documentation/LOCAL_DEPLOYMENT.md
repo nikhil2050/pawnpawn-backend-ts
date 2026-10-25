@@ -265,8 +265,8 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 
 ### Custom Routes: Current Status
 
-> **Implemented reads:** `GET /admin/seller`, `GET /admin/seller/:id`, and the Medusa Admin **Sellers** page at `/app/sellers`.  
-> **Planned:** `/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, admin seller mutations, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
+> **Implemented reads + writes:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), plus the Medusa Admin **Sellers** page at `/app/sellers`.  
+> **Planned:** `/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 ### Test Seller Module (Working Today)
 
@@ -365,7 +365,22 @@ Expected: two rows for the seeded Snoop Dogg Platinum Chain (Sarah, then Olivia)
 
 ### Manage Seller Trust & Category
 
-Use the module service from a script (or SQL until admin routes exist):
+Use the admin REST API (preferred) or the module service from a script:
+
+```http
+PATCH /admin/seller/<seller_id>
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "seller_trust": "untrusted",
+  "seller_category": "athlete",
+  "social_media_handle": "@newhandle",
+  "bio": "Updated bio"
+}
+```
+
+Or use the module service from a script:
 
 ```ts
 const sellerService = container.resolve("seller")
@@ -382,6 +397,8 @@ Equivalent SQL:
 UPDATE seller
 SET seller_trust = 'untrusted',
     seller_category = 'athlete',
+    social_media_handle = '@newhandle',
+    bio = 'Updated bio',
     updated_at = NOW()
 WHERE handle = 'sarah_resells';
 ```
@@ -424,6 +441,10 @@ Run all commands from `apps/backend/` directory.
 | List all tables | `psql -h localhost -U postgres -d pawnpawn_db -c "\dt"` |
 | Describe product table | `psql -h localhost -U postgres -d pawnpawn_db -c "\d product"` |
 | Admin login API | `curl -X POST http://localhost:9000/auth/user/emailpass -d '{"email":"admin@pawnpawn.com","password":"supersecret"}'` |
+| List sellers | `curl -H "Authorization: Bearer $TOKEN" http://localhost:9000/admin/seller` |
+| Create seller | `curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{...}' http://localhost:9000/admin/seller` |
+| Update seller | `curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{...}' http://localhost:9000/admin/seller/:id` |
+| Deactivate seller | `curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:9000/admin/seller/:id` |
 | Start dev server | `../../node_modules/.bin/medusa develop` |
 | Start from project root | `npm run backend:dev` (run from repo root, not `apps/backend`) |
 | Stop dev server | `pkill -f "medusa develop"` |
@@ -444,7 +465,7 @@ Run all commands from `apps/backend/` directory.
 | `401 Unauthorized` on a protected endpoint | Not authenticated | Login first to get JWT token/cookie |
 | `EADDRINUSE: port 9000` | Another Medusa dev server is running | `pkill -f "medusa develop"`; if needed `lsof -ti:9000 \| xargs kill -9` |
 | `this.list is not a function` | Called a generic method in a `MedusaService` subclass | Use `listSellers` / `updateSellers` / `listProductLineages` etc. |
-| `seller endpoints` return 404 | Only the admin seller reads are implemented | Use `GET /admin/seller*` / `/app/sellers`, or `container.resolve("seller")` / SQL for mutations; see `API.md` status table |
+| `seller endpoints` return 404 | Only the admin seller CRUD is implemented | Use `GET/POST/PATCH/DELETE /admin/seller*` / `/app/sellers`, or `container.resolve("seller")` / SQL for store routes; see `API.md` status table |
 | `Medusa requires Node ≥ 22.22.0` | Old Node version | `nvm install 24.15.0 && nvm use 24.15.0` |
 | `npm run db:import` fails | `ts-node` not found | Ensure devDependencies are installed: `npm install` |
 | `npx medusa` commands fail | `npx` downloads wrong package | Use `../../node_modules/.bin/medusa` instead |
@@ -477,9 +498,12 @@ Before considering your local setup complete, verify:
 - [ ] `medusa exec ./src/scripts/verify-sample-data.ts` passes
 - [ ] `GET /admin/seller` returns 7 sellers with an admin token (401 without one)
 - [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 7 sellers
+- [ ] `POST /admin/seller` creates a seller and returns 201
+- [ ] `PATCH /admin/seller/:id` updates seller fields and returns 200
+- [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (`/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, lineage REST, admin seller mutations, `/admin/lineage*`) are not implemented yet. Admin seller reads are implemented and should be included in validation.
+> Remaining custom routes (`/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Admin seller CRUD (read/create/update/deactivate) is implemented and should be included in validation.
 
 ---
 

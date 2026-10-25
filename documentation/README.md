@@ -1,0 +1,56 @@
+# PawnPawn Backend Documentation
+
+Index for all project documentation. The backend is a Medusa v2.22.0 service in `apps/backend/`, seeded with celebrity-memorabilia demo data.
+
+## Document Map
+
+| Document | Read it for |
+|----------|-------------|
+| [`AI_CONTEXT.md`](./AI_CONTEXT.md) | Architecture, directory layout, schema, config, module services, workflows |
+| [`API.md`](./API.md) | OpenAPI spec, endpoint summary, implementation status, request/response examples |
+| [`LOCAL_DEPLOYMENT.md`](./LOCAL_DEPLOYMENT.md) | Prerequisites, setup, seeding, start/stop, endpoint testing |
+| [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) | Seeded sellers, buyers, products, lineage, credentials, verification |
+| [`POSTGRESQL_COMMANDS.md`](./POSTGRESQL_COMMANDS.md) | SQL cheat sheet for seller, lineage, and product operations |
+| [`DB_MIGRATE_WORKAROUND.md`](./DB_MIGRATE_WORKAROUND.md) | Why `medusa-config.js` is plain CJS and how to migrate/import schema |
+| [`AGENTS.md`](./AGENTS.md) | Agent/contributor rules, conventions, common mistakes, off-limits paths |
+| [`CLAUDE.md`](./CLAUDE.md) | Pointer to `AGENTS.md` |
+
+## Current Status (Oct 2026)
+
+- Medusa core routes work: auth (`/auth/*`), store catalog (`GET /store/products`), store customers, admin core.
+- Custom modules work: `container.resolve("seller")` and `container.resolve("lineage")`.
+- Seller data is readable through the admin API (`GET /admin/seller`, `GET /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
+- Custom storefront routes are **planned**: seller onboarding, seller listings, auctions, purchase, lineage, and admin seller mutations. See [`API.md`](./API.md#current-implementation-status).
+- Database and seed data are verified: 7 sellers, 5 buyers, 17 products, 33 variants, 72 prices, 8 lineage records.
+
+## Quick Start
+
+```bash
+cd apps/backend
+
+# Schema + sample data
+npm run db:import
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+
+# Verify custom modules
+../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
+
+# Run the server
+../../node_modules/.bin/medusa develop
+```
+
+- API: `http://localhost:9000`
+- Admin UI: `http://localhost:9000/app`
+- Admin sellers page: `http://localhost:9000/app/sellers`
+- Admin: `admin@pawnpawn.com` / `supersecret`
+- Buyers: password `buyer1234` (see [`SAMPLE_DATA.md`](./SAMPLE_DATA.md))
+
+## Keeping Docs in Sync
+
+Update the relevant file whenever you change schema, routes, module methods, or seed data:
+
+- Schema/SQL → `POSTGRESQL_COMMANDS.md` + `AI_CONTEXT.md`
+- Routes → `API.md` (including the implementation-status table)
+- Demo data/credentials → `SAMPLE_DATA.md`
+- Setup/commands → `LOCAL_DEPLOYMENT.md`
+- Conventions/gotchas → `AGENTS.md`

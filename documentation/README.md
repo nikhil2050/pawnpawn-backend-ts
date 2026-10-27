@@ -27,6 +27,7 @@ Index for all project documentation. The backend is a Medusa v2.22.0 service in 
 - Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
 - Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`).
 - Custom storefront routes are **planned**: `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, purchase, lineage, and `/admin/lineage*`. See [`API.md`](./API.md#current-implementation-status).
+- Product creation normalizes handles server-side and allocates `-2`, `-3`, and later suffixes for duplicates. Admin product creation enforces one selected value per option and shows the final persisted handle in the success notification.
 - Database and seed data are verified: 8 sellers, 5 buyers, 17 products (13 published marketplace products), 33 variants, 72 prices, 13 listings, 13 unique marketplace inventory units, native fashion taxonomy/options, and 8 lineage records.
 
 ## Quick Start

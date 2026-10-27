@@ -1311,7 +1311,7 @@ paths:
 | POST | `/store/products/:id/auction/start` | Bearer/Cookie | Start auction | `200 OK` | Planned |
 | POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | `200 OK` | Planned |
 
-> The core product endpoints return Medusa fields. The custom `listing_type` column is stored in PostgreSQL but is not part of Medusa's product model, so it is not returned by `GET /store/products` until a custom route/serializer is added.
+> The core product endpoints return Medusa fields. The custom `listing_type` column belongs to the marketplace `listing` table and is not part of Medusa's product model, so it is not returned by `GET /store/products` until a custom route/serializer is added.
 
 ### Purchase & Lineage APIs
 

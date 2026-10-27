@@ -256,6 +256,37 @@ Read [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record)
 - **Mutate commerce data through `core-flows` workflows**, not raw module service calls, so links, events, and inventory stay consistent.
 - Adding a task to `turbo.json` requires declaring its `outputs`, or Turbo will cache nothing/the wrong thing.
 
+### Strict Commit and Code Explanation Convention
+
+Whenever generating git commits, code descriptions, or pull request summaries,
+use this Conventional Commits format:
+
+```text
+<type>(<scope>): <short imperative description>
+```
+
+Allowed types:
+
+- `feat` — new features
+- `fix` — bug fixes
+- `refactor` — code restructuring without feature or fix changes
+- `perf` — performance enhancements
+- `docs` — documentation updates
+- `chore` — configuration, build, or dependency updates
+
+Allowed scopes map to PawnPawn modules:
+`products`, `seller`, `listing`, `lineage`, `hq` (or `fulfillment`), `cart`,
+`auth`, `admin`, `db`, and `config`.
+
+Examples:
+
+```text
+feat(seller): add automated handle generation for onboarding
+fix(listing): prevent purchase if inventory quantity is zero
+refactor(hq): decouple fulfillment status per order line item
+chore(config): register custom modules in medusa-config.js
+```
+
 ## Common Mistakes
 
 - Running storefront commands without checking that `apps/storefront/` exists.

@@ -6,6 +6,8 @@
 
 > **Canonical marketplace architecture:** Read [the Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) before changing seller, product, order, listing, lineage, inventory, or HQ fulfillment behavior. It records the resolved design questions from the architecture review.
 
+> **Commit and explanation convention:** All generated git commits, code descriptions, and pull request summaries must use Conventional Commits: `<type>(<scope>): <short imperative description>`. Allowed types are `feat`, `fix`, `refactor`, `perf`, `docs`, and `chore`. Allowed PawnPawn scopes are `products`, `seller`, `listing`, `lineage`, `hq` (or `fulfillment`), `cart`, `auth`, `admin`, `db`, and `config`. See [`AGENTS.md`](./AGENTS.md#strict-commit-and-code-explanation-convention) for the full rule and examples.
+
 ---
 
 ## 1. 🎯 Project Overview

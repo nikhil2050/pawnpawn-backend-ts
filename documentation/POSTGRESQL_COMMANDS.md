@@ -89,10 +89,15 @@ ORDER BY t.typname, e.enumsortorder;
 \d product_lineage
 ```
 
-### product table (Medusa-managed, with our extension)
+### product and listing tables (Medusa product + custom marketplace listing)
 ```sql
 \d product
+\d listing
 ```
+
+Product ownership and lifecycle fields are stored in the custom `listing` table;
+the Medusa `product` table is not extended with `seller_id` or `listing_type`.
+Seller display fields remain in `product.metadata` for compatibility.
 
 ### Helper views
 ```sql
@@ -301,11 +306,13 @@ ORDER BY pl.transacted_at DESC;
 
 > `product` has no `price` or `seller_id` column. Prices live in `price` (via `price_set` + variants), and the seller link is stored in `product.metadata` (`seller_id`, `seller_handle`).
 
-### List all FIXED_PRICE products
+### List all FIXED_PRICE listings
 ```sql
-SELECT id, title, listing_type, metadata->>'seller_handle' AS seller_handle
-FROM product
-WHERE listing_type = 'FIXED_PRICE'
+SELECT l.id, l.product_id, p.title, l.listing_type,
+       p.metadata->>'seller_handle' AS seller_handle
+FROM listing l
+JOIN product p ON p.id = l.product_id
+WHERE l.listing_type = 'FIXED_PRICE'
 ORDER BY title;
 ```
 
@@ -325,10 +332,10 @@ SET listing_type = 'AUCTION',
 WHERE product_id = 'prod_snoop_002';
 ```
 
-### Count products by listing type
+### Count listings by listing type
 ```sql
-SELECT listing_type, COUNT(*) AS product_count
-FROM product
+SELECT listing_type, COUNT(*) AS listing_count
+FROM listing
 GROUP BY listing_type;
 ```
 
@@ -489,12 +496,12 @@ GRANT USAGE ON SCHEMA public TO your_user;
 npm run db:import
 ```
 
-### Column listing_type not found on product
+### Column listing_type not found on listing
 ```bash
-# Ensure Medusa migrations have run first (creates product table)
+# Ensure Medusa migrations have run first (creates native product tables)
 ../../node_modules/.bin/medusa db:migrate
 
-# Then import our schema
+# Then import the custom listing schema
 npm run db:import
 ```
 

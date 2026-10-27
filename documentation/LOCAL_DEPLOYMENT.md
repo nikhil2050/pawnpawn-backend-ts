@@ -272,6 +272,8 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 > **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, and the Medusa Admin **Sellers** page at `/app/sellers`.
 > **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
+> **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
+
 ### Test Seller Module (Working Today)
 
 The full seller module behavior is exercised with `medusa exec`; admin reads are tested separately below.

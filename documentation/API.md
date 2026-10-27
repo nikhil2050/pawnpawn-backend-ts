@@ -73,7 +73,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 |------|--------------------|--------|
 | Admin auth | `POST /auth/user/emailpass`, `POST /auth/session` | Implemented |
 | Customer auth | `POST /auth/customer/emailpass`, `POST /auth/customer/emailpass/register` | Implemented |
-| Store catalog | `GET /store/products`, `GET /store/products/:id` | Implemented (Medusa core) |
+| Store catalog | `GET /store/products`, `GET /store/products/:id` | Marketplace filtering implemented; detail remains Medusa core |
 | Store customers | `POST /store/customers` | Implemented (Medusa core) |
 | Admin core | Regions, products, customers, orders, API keys | Implemented (Medusa core) |
 | Product-created marketplace provisioning | `product.created` subscriber | Implemented |
@@ -109,6 +109,7 @@ apps/backend/src/api/store/seller/onboard/route.ts          # POST /store/seller
 apps/backend/src/api/store/seller/listings/route.ts         # GET/POST /store/seller/listings
 apps/backend/src/api/store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
 apps/backend/src/api/store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
+apps/backend/src/api/store/products/route.ts                # GET /store/products (AVAILABLE catalog + filters)
 apps/backend/src/api/store/purchase/route.ts                # POST /store/purchase (dummy checkout)
 apps/backend/src/api/middlewares.ts
 ```
@@ -873,13 +874,19 @@ paths:
       tags: [Products]
       summary: List products with filters
       parameters:
-        - name: listing_type
+        - name: category_id
           in: query
+          description: Native Medusa category ID; comma-separated values are accepted
           schema:
             type: string
-            enum: [FIXED_PRICE, AUCTION]
-        - name: seller_id
+        - name: collection_id
           in: query
+          description: Native Medusa collection ID; comma-separated values are accepted
+          schema:
+            type: string
+        - name: options
+          in: query
+          description: Option filter such as Size:M or Condition:Like New; comma-separated values are accepted
           schema:
             type: string
         - name: limit
@@ -1324,14 +1331,14 @@ paths:
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
-| GET | `/store/products` | Publishable key | List products with filters | `200 OK` | Implemented (core) |
+| GET | `/store/products` | Publishable key | List only `AVAILABLE` marketplace products in the key's sales channels; filter by category, collection, and options | `200 OK` | Implemented |
 | GET | `/store/products/:id` | Publishable key | Get product details | `200 OK` | Implemented (core) |
 | POST | `/store/products` | Bearer/Cookie | Create seller listing (FIXED_PRICE or AUCTION) | `201 Created` | Planned |
 | PATCH | `/store/products/:id` | Bearer/Cookie | Update seller listing | `200 OK` | Planned |
 | POST | `/store/products/:id/auction/start` | Bearer/Cookie | Start auction | `200 OK` | Planned |
 | POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | `200 OK` | Planned |
 
-> The core product endpoints return Medusa fields. The custom `listing_type` column belongs to the marketplace `listing` table and is not part of Medusa's product model, so it is not returned by `GET /store/products` until a custom route/serializer is added.
+> `GET /store/products` uses a custom marketplace serializer. It filters by custom Listing status, while category, collection, option values, variants, and pricing remain native Medusa product data.
 
 ### Purchase & Lineage APIs
 
@@ -1869,7 +1876,7 @@ line's lineage transfer. Repeated cancellation is idempotent.
 
 ### 6.11 Public Seller Profile (Working Today)
 
-> **Status: IMPLEMENTED** — `GET /store/sellers/:handle` returns a seller's public profile and their published listings.
+> **Status: IMPLEMENTED** — `GET /store/sellers/:handle` returns public seller details, active `AVAILABLE` products, and a `SOLD` closet archive.
 
 ```bash
 curl -s "http://localhost:9000/store/sellers/snoopdogg"
@@ -1885,7 +1892,8 @@ curl -s "http://localhost:9000/store/sellers/snoopdogg"
     "avatar_url": "https://picsum.photos/seed/snoopdogg/400/400",
     "bio": "Legendary rapper and entrepreneur."
   },
-  "products": [ { "id": "prod_snoop_001", "title": "Snoop Dogg Platinum Chain", ... } ]
+  "products": [ { "id": "prod_snoop_001", "title": "Snoop Dogg Platinum Chain", "marketplace_listing": { "listing_status": "AVAILABLE" } } ],
+  "archive": [ { "id": "prod_snoop_old_001", "title": "Retired memorabilia", "marketplace_listing": { "listing_status": "SOLD" } } ]
 }
 ```
 

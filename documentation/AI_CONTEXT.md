@@ -107,6 +107,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   │   ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
         │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
         │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
+        │       │   │   ├── store/products/route.ts                # GET /store/products (AVAILABLE catalog)
         │       │   │   ├── store/purchase/route.ts                # POST /store/purchase (dummy checkout)
         │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
         │       │   │   ├── admin/custom/route.ts # Placeholder only
@@ -218,10 +219,9 @@ Status values: **Implemented** = available in the repository and local database;
 #### 4.4.5 Buyer storefront and search
 
 - [x] **Implemented** — Public seller profiles return active seller information and available inventory.
-- [x] **Partial** — Product visibility is controlled through Listing status in custom seller/profile routes; the core Medusa `/store/products` route still needs a Listing-aware filter middleware/serializer.
+- [x] **Implemented** — Custom `GET /store/products` returns only published products with `AVAILABLE` Listings, scopes results to the publishable key's sales channels, and applies native category, collection, and option filters.
 - [x] **Implemented** — Native category, collection, and option values are present for storefront filtering/search indexing.
-- [ ] **Planned** — A dedicated `GET /store/products` marketplace serializer with explicit `AVAILABLE` filtering and seller fields.
-- [ ] **Partial** — Seller profile route returns active available inventory; a dedicated public sold-archive response is still pending.
+- [x] **Implemented** — Seller profiles return public details, active `AVAILABLE` products, and a `SOLD` closet archive.
 
 #### 4.4.6 Checkout, inventory, lineage, and resale
 
@@ -716,6 +716,23 @@ API: apps/backend/src/api/admin/seller/route.ts
      apps/backend/src/api/admin/seller/[id]/route.ts
 
 PLANNED: /admin/lineage*
+```
+
+### 8.8 Storefront Catalog and Seller Archive (Implemented)
+
+```
+IMPLEMENTED: GET /store/products
+  → Listing status is the visibility boundary: only AVAILABLE + published products return.
+  → Uses the publishable key's sales-channel scope.
+  → Supports category_id, collection_id, options=Size:M, limit, and offset.
+  → Exposes only public Listing fields; reviewer and moderation feedback stay private.
+
+IMPLEMENTED: GET /store/sellers/:handle
+  → returns public seller data, active AVAILABLE products, and SOLD products in archive.
+
+CODE: src/workflows/storefront/catalog.ts
+      src/api/store/products/route.ts
+      src/api/store/sellers/[handle]/route.ts
 ```
 
 ---

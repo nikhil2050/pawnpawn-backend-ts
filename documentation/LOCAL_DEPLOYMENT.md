@@ -583,6 +583,8 @@ Before considering your local setup complete, verify:
 - [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
 - [ ] `POST /store/seller/onboard` creates a seller profile for an authenticated customer
 - [ ] `GET /store/sellers/:handle` returns a public seller profile + products
+- [ ] `GET /store/products` hides pending/rejected/sold Listings and supports `category_id`, `collection_id`, and `options=Size:M` filters
+- [ ] `GET /store/sellers/:handle` returns active products plus the sold `archive`
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
 - [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
 - [ ] `POST /admin/hq-fulfillments/:id/exception` supports split dispatch and seller cancellation/refund

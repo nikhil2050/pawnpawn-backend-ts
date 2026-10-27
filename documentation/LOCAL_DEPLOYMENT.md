@@ -269,8 +269,8 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `POST /store/purchase` (dummy checkout), the `product.created` marketplace-provisioning subscriber, and the Medusa Admin **Sellers** page at `/app/sellers`.
-> **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the `product.created` marketplace-provisioning subscriber, and the Medusa Admin **Sellers** page at `/app/sellers`.
+> **Planned:** custom `POST/PATCH /store/products`, auctions, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 > **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
 
@@ -429,9 +429,9 @@ curl -s -X POST http://localhost:9000/admin/hq-fulfillments/hq_01M.../review \
 
 Auction routes are not implemented. `listing_type = 'AUCTION'` is stored on the `listing` row, but there is no auction workflow yet.
 
-### Test Get Product Lineage — Planned
+### Test Get Product Lineage
 
-`GET /store/products/:id/lineage` is not implemented. Read lineage through the module service or SQL:
+`GET /store/products/:id/lineage` returns chronological transfers with public seller summaries and opaque buyer IDs. It excludes buyer PII, payment data, and internal order-line IDs. The SQL query remains useful for database-level verification:
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -c \
@@ -582,9 +582,12 @@ Before considering your local setup complete, verify:
 - [ ] `PATCH /admin/seller/:id` updates seller fields and returns 200
 - [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
 - [ ] `POST /store/seller/onboard` creates a seller profile for an authenticated customer
+- [ ] `GET /store/seller/me` returns profile, trust/category/verification, and listing statistics for an authenticated seller
+- [ ] `PATCH /store/seller/me` changes only store name, bio, avatar URL, or social handle
 - [ ] `GET /store/sellers/:handle` returns a public seller profile + products
 - [ ] `GET /store/products` hides pending/rejected/sold Listings and supports `category_id`, `collection_id`, and `options=Size:M` filters
 - [ ] `GET /store/sellers/:handle` returns active products plus the sold `archive`
+- [ ] `GET /store/products/:id/lineage` returns chronological ownership history without buyer PII
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
 - [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
 - [ ] `POST /admin/hq-fulfillments/:id/exception` supports split dispatch and seller cancellation/refund
@@ -593,7 +596,7 @@ Before considering your local setup complete, verify:
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (`PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Seller onboarding, seller listings, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
+> Remaining custom routes (custom `POST/PATCH /store/products`, auctions, `/admin/lineage*`) are not implemented yet. Seller onboarding/profile management, seller listings, public lineage, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
 
 ### UI-only HQ exception test (pending Admin screen)
 

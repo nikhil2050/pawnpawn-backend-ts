@@ -104,12 +104,14 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   ├── api/
         │       │   │   ├── store/custom/route.ts # Placeholder only (no PawnPawn store routes yet)
         │       │   │   ├── store/seller/onboard/route.ts          # POST /store/seller/onboard
+        │       │   │   ├── store/seller/me/route.ts               # GET/PATCH /store/seller/me
         │       │   │   ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
         │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
         │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
         │       │   │   ├── store/products/route.ts                # GET /store/products (AVAILABLE catalog)
         │       │   │   ├── store/purchase/route.ts                # POST /store/purchase (dummy checkout)
         │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
+        │       │   │   └── store/products/[id]/lineage/route.ts   # GET /store/products/:id/lineage
         │       │   │   ├── admin/custom/route.ts # Placeholder only
         │       │   │   ├── admin/seller/route.ts # GET/POST /admin/seller
         │       │   │   ├── admin/seller/[id]/route.ts # GET/PATCH/DELETE /admin/seller/:id
@@ -181,6 +183,7 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Seller inactivation uses `is_deactivated`; seller rows and history are retained.
 - [ ] **Partial** — Existing celebrity fixture sellers need real `customer_id` links before they can authenticate through the seller portal.
 - [x] **Implemented** — Active seller authorization scopes seller listing reads and writes to the authenticated customer.
+- [x] **Implemented** — `GET /store/seller/me` returns the active Seller profile with trust, category, verification, flag state, and Listing counts; `PATCH` changes only seller-owned presentation fields.
 
 #### 4.4.2 Native catalog and item modeling
 
@@ -295,8 +298,9 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 
 ### 5.4 Implemented backend surface
 
-- Seller: `POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`.
+- Seller: `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`.
 - Public seller: `GET /store/sellers/:handle`.
+- Public lineage: `GET /store/products/:id/lineage`.
 - Admin listings: `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`.
 - HQ operations: `POST /admin/hq-fulfillments/:id` with `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, or `MARK_DELIVERED`.
 - `order.placed` creates HQ records, marks matching available items sold, and records lineage.
@@ -618,7 +622,7 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-da
 
 ## 8. 🔄 Core Workflows
 
-> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`), admin listing review, HQ fulfillment transitions, seller onboarding, seller listings, dummy `POST /store/purchase`, and the **Sellers** admin page are implemented. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
+> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD, admin listing review, HQ fulfillment transitions, seller onboarding/listings/profile management, public lineage, dummy `POST /store/purchase`, and the **Sellers** admin page are implemented. Custom `POST/PATCH /store/products`, auctions, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
 
 ### 8.1 Admin Login (Implemented)
 ```
@@ -691,9 +695,12 @@ and the dummy checkout. MVP limitations are dummy payment capture and no
 database-backed reservation/outbox transaction; production payment authorization
 and transactional inventory reservation must be added before launch.
 
-### 8.6 Lineage Query (Planned REST — module/SQL works)
+### 8.6 Lineage Query (Implemented REST)
 ```
-PLANNED: GET /store/products/:id/lineage
+IMPLEMENTED: GET /store/products/:id/lineage
+  → chronological transfer history from LineageModuleService.getLineageHistory
+  → seller public profile, opaque buyer ID, price, transaction time, voided_at
+  → excludes buyer PII, payment data, and internal order-line IDs
 
 CURRENT: lineageService.getLineageHistory(productId)
          lineageService.getCurrentOwner(productId)
@@ -733,6 +740,33 @@ IMPLEMENTED: GET /store/sellers/:handle
 CODE: src/workflows/storefront/catalog.ts
       src/api/store/products/route.ts
       src/api/store/sellers/[handle]/route.ts
+```
+
+### 8.9 Seller Workspace Profile (Implemented)
+
+```
+GET /store/seller/me
+  → customer-authenticated active Seller only
+  → profile + trust/category/verification + Listing status counts
+
+PATCH /store/seller/me
+  → writable: store_name, bio, avatar_url, social_media_handle
+  → admin-only trust, verification, deactivation, flag, and payout fields are immutable
+
+CODE: src/workflows/storefront/seller-profile.ts
+      src/api/store/seller/me/route.ts
+```
+
+### 8.10 Public Lineage Projection (Implemented)
+
+```
+GET /store/products/:id/lineage
+  → reads LineageModuleService history in ascending transaction order
+  → returns public seller summary, opaque buyer customer ID, price, timestamps
+  → never returns buyer PII, payment data, or internal order-line IDs
+
+CODE: src/workflows/storefront/lineage.ts
+      src/api/store/products/[id]/lineage/route.ts
 ```
 
 ---
@@ -789,8 +823,8 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | Authenticated seller's listings | Implemented |
 | POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing) | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update own listing | Implemented |
-| GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | Planned |
-| PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | Planned |
+| GET | `/store/seller/me` | Bearer/Cookie | Current seller profile plus listing stats | Implemented |
+| PATCH | `/store/seller/me` | Bearer/Cookie | Update seller-owned display fields | Implemented |
 
 ### 10.3 Listings & HQ Fulfillment
 | Method | Endpoint | Auth | Description | Status |
@@ -814,7 +848,7 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout; per-line SOLD, HQ fulfillment, and lineage processing | Implemented (MVP) |
-| GET | `/store/products/:id/lineage` | No | Ownership history | Planned |
+| GET | `/store/products/:id/lineage` | No | Public ownership history (opaque buyer IDs) | Implemented |
 
 ### 10.6 Custom Module Admin REST
 | Method | Endpoint | Auth | Description | Status |

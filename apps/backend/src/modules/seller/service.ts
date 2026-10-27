@@ -11,6 +11,26 @@ export type SellerCategory =
 export class SellerModuleService extends MedusaService({
   Seller,
 }) {
+  async findActiveByCustomerId(customerId: string) {
+    const [seller] = await this.listSellers(
+      { customer_id: customerId, is_deactivated: false },
+      { take: 1 }
+    )
+    return seller ?? null
+  }
+
+  async updateStoreProfile(
+    sellerId: string,
+    data: {
+      store_name?: string
+      bio?: string | null
+      avatar_url?: string | null
+      social_media_handle?: string | null
+    }
+  ) {
+    return this.updateSellers({ id: sellerId, ...data })
+  }
+
   async findByHandle(handle: string) {
     const [seller] = await this.listSellers({ handle }, { take: 1 })
     return seller ?? null

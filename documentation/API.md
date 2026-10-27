@@ -78,16 +78,15 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Admin core | Regions, products, customers, orders, API keys | Implemented (Medusa core) |
 | Product-created marketplace provisioning | `product.created` subscriber | Implemented |
 | Seller module | `SellerModuleService` (CRUD + trust/category methods) | Implemented (service only) |
-| Lineage module | `LineageModuleService` (`recordTransfer`, `getLineageHistory`, `getCurrentOwner`) | Implemented (service only) |
+| Lineage module | `LineageModuleService` (`recordTransfer`, `getLineageHistory`, `getCurrentOwner`) | Implemented |
 | Listing module | `ListingModuleService` (`reviewListing`) | Implemented (service only) |
 | HQ Fulfillment module | `HqFulfillmentModuleService` | Implemented (service only) |
 | Seller onboarding | `POST /store/seller/onboard` | Implemented |
-| Seller profile | `GET /store/sellers/:handle` | Implemented |
+| Seller profile | `GET /store/sellers/:handle`, `GET/PATCH /store/seller/me` | Implemented |
 | Seller listings | `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id` | Implemented |
-| Seller field updates | `PATCH /store/seller/me` | **Planned** |
 | Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** (use `/store/seller/products`) |
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
-| Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | Purchase implemented; lineage REST planned |
+| Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | Implemented |
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
 | Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
@@ -106,10 +105,12 @@ apps/backend/src/api/admin/seller/[id]/route.ts            # GET/PATCH/DELETE /a
 apps/backend/src/api/admin/seller/[id]/listings/route.ts   # GET /admin/seller/:id/listings
 apps/backend/src/api/store/custom/route.ts
 apps/backend/src/api/store/seller/onboard/route.ts          # POST /store/seller/onboard
+apps/backend/src/api/store/seller/me/route.ts               # GET/PATCH /store/seller/me
 apps/backend/src/api/store/seller/listings/route.ts         # GET/POST /store/seller/listings
 apps/backend/src/api/store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
 apps/backend/src/api/store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
 apps/backend/src/api/store/products/route.ts                # GET /store/products (AVAILABLE catalog + filters)
+apps/backend/src/api/store/products/[id]/lineage/route.ts   # GET /store/products/:id/lineage
 apps/backend/src/api/store/purchase/route.ts                # POST /store/purchase (dummy checkout)
 apps/backend/src/api/middlewares.ts
 ```
@@ -826,7 +827,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Seller'
+                type: object
+                properties:
+                  seller:
+                    allOf:
+                      - $ref: '#/components/schemas/Seller'
+                      - type: object
+                        properties:
+                          stats:
+                            type: object
 
     patch:
       tags: [Seller]
@@ -845,13 +854,52 @@ paths:
                 avatar_url:
                   type: string
                   nullable: true
+                bio:
+                  type: string
+                  nullable: true
+                social_media_handle:
+                  type: string
+                  nullable: true
       responses:
         '200':
-          description: Updated seller profile
+          description: Updated seller profile with listing statistics
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Seller'
+                type: object
+                properties:
+                  seller:
+                    allOf:
+                      - $ref: '#/components/schemas/Seller'
+                      - type: object
+                        properties:
+                          stats:
+                            type: object
+        '403':
+          description: Authenticated customer has no active seller profile
+
+  /store/products/{id}/lineage:
+    get:
+      tags: [Products]
+      summary: Get public ownership provenance for a product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chronological transfers. Buyer data is limited to opaque customer IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product_id:
+                    type: string
+                  lineage:
+                    type: array
 
   /store/products:
     post:
@@ -1310,8 +1358,8 @@ paths:
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | List the authenticated seller's listings | `200 OK` | Implemented |
 | POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing row) | `201 Created` | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update the authenticated seller's own listing | `200 OK` | Implemented |
-| GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | `200 OK` | Planned |
-| PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | `200 OK` | Planned |
+| GET | `/store/seller/me` | Bearer/Cookie (customer) | Current seller profile plus Listing status counts | `200 OK` | Implemented |
+| PATCH | `/store/seller/me` | Bearer/Cookie (customer) | Update store name, bio, avatar, or social handle | `200 OK` | Implemented |
 
 ### Listing APIs
 
@@ -1329,6 +1377,9 @@ paths:
 
 ### Product APIs
 
+| GET | `/store/products` | Publishable key | AVAILABLE listings only; category, collection, and option filters | `200 OK` | Implemented |
+| GET | `/store/products/:id/lineage` | Publishable key | Chronological public ownership provenance | `200 OK` | Implemented |
+
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | GET | `/store/products` | Publishable key | List only `AVAILABLE` marketplace products in the key's sales channels; filter by category, collection, and options | `200 OK` | Implemented |
@@ -1345,7 +1396,7 @@ paths:
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout for unique variants; creates per-line HQ and lineage records | `201 Created` | Implemented |
-| GET | `/store/products/:id/lineage` | No | Get ownership history | `200 OK` | Planned |
+| GET | `/store/products/:id/lineage` | No | Public ownership history (opaque buyer IDs) | `200 OK` | Implemented |
 
 ### Custom Module Admin APIs
 
@@ -1896,6 +1947,22 @@ curl -s "http://localhost:9000/store/sellers/snoopdogg"
   "archive": [ { "id": "prod_snoop_old_001", "title": "Retired memorabilia", "marketplace_listing": { "listing_status": "SOLD" } } ]
 }
 ```
+
+### 6.12 Seller Workspace Profile (Working Today)
+
+`GET /store/seller/me` returns the authenticated customer's active Seller profile,
+including `seller_trust`, `seller_category`, `verification_status`, flag state, and
+Listing counts (`total_listings`, `pending_approval`, `available`, `sold`, and
+`rejected`). `PATCH /store/seller/me` accepts only `store_name`, `bio`,
+`avatar_url`, and `social_media_handle`; marketplace moderation and payment fields
+remain admin-controlled.
+
+### 6.13 Public Product Lineage (Working Today)
+
+`GET /store/products/:id/lineage` returns transfers in ascending transaction order.
+Each transfer includes the public seller profile, opaque buyer customer ID, price,
+transaction timestamp, and `voided_at` when an HQ cancellation reversed it. Customer
+PII, payment data, and internal order-line identifiers are never exposed.
 
 ---
 

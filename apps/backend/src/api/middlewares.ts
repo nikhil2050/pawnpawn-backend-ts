@@ -100,8 +100,25 @@ export default defineMiddlewares({
         }),
       ],
     },
+    // Keep the plural public-profile route (/store/sellers/:handle) public.
+    // Only singular seller workspace routes require a customer actor.
     {
-      matcher: '/store/seller*',
+      matcher: '/store/seller/onboard',
+      methods: ['POST'],
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/seller/me',
+      methods: ['GET', 'PATCH'],
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/seller/products*',
+      methods: ['POST'],
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/seller/listings*',
       methods: ['POST', 'PATCH', 'DELETE', 'GET'],
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },

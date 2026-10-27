@@ -106,6 +106,11 @@ export default defineMiddlewares({
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
     {
+      matcher: '/store/purchase',
+      methods: ['POST'],
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
       // Use a wildcard because Medusa's Admin router may append a route suffix
       // while resolving the native product create handler.
       matcher: '/admin/products*',

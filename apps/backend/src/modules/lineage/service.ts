@@ -8,6 +8,7 @@ export class LineageModuleService extends MedusaService({
     product_id: string
     seller_id?: string | null
     buyer_id: string
+    order_line_item_id: string
     price: number
     transacted_at?: Date
   }) {
@@ -15,6 +16,7 @@ export class LineageModuleService extends MedusaService({
       product_id: data.product_id,
       seller_id: data.seller_id ?? null,
       buyer_id: data.buyer_id,
+      order_line_item_id: data.order_line_item_id,
       price: data.price,
       transacted_at: data.transacted_at ?? new Date(),
     })

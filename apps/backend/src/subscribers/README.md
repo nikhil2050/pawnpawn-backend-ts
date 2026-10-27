@@ -4,6 +4,14 @@ Subscribers maintain cross-module marketplace synchronization described in the [
 
 `product-created.ts` listens for `product.created` from the Seller API and native Admin UI. It repairs or assigns standardized SKUs, enables one-of-one inventory, provisions a `PENDING_APPROVAL` Listing, and falls back to the `system` Seller when product metadata has no Seller context. It is idempotent so it can safely run alongside the Seller listing route.
 
+`order-placed-hq-fulfillment.ts` listens for `order.placed` and exports the same
+`processOrderPlaced` handler used by the dummy `POST /store/purchase` route. For
+each order line it marks the Listing `SOLD`, sets all linked inventory levels to
+zero, drafts the native product, creates one `WAITING_FOR_ARRIVAL` HQ record,
+and records seller-to-buyer lineage. The source order-line ID is the lineage
+retry key, so an event retry is safe while a later resale to the same buyer is
+still recorded.
+
 Subscribers handle events emitted in the Medusa application.
 
 > Learn more about Subscribers in [this documentation](https://docs.medusajs.com/learn/fundamentals/events-and-subscribers).

@@ -269,8 +269,8 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, the `product.created` marketplace-provisioning subscriber, and the Medusa Admin **Sellers** page at `/app/sellers`.
-> **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `POST /store/purchase` (dummy checkout), the `product.created` marketplace-provisioning subscriber, and the Medusa Admin **Sellers** page at `/app/sellers`.
+> **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 > **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
 
@@ -371,6 +371,29 @@ curl -s -X POST http://localhost:9000/store/seller/onboard \
 ```bash
 curl -s http://localhost:9000/store/sellers/snoopdogg
 ```
+
+### Test Dummy Purchase Checkout (Implemented MVP)
+
+Use a customer token and an `AVAILABLE` listing's variant ID. The endpoint
+calculates the server-side regional price, locks the requested Listings, then
+creates the order and completes per-line inventory, HQ, and lineage updates
+before it responds.
+
+```bash
+TOKEN=<customer_token>
+curl -s -X POST http://localhost:9000/store/purchase \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "items": [{"variant_id":"variant_01M...","quantity":1}],
+    "region_id":"reg_01M5SSC7P6CPJDG955B1564RQT",
+    "sales_channel_id":"sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2",
+    "shipping_address":{"first_name":"Sarah","last_name":"Johnson","address_1":"100 Market Street","city":"Los Angeles","country_code":"us","postal_code":"90001"}
+  }'
+```
+
+Verify the Listing is `SOLD`, its inventory level is zero, and one
+`hq_fulfillment` and `product_lineage` row exists for the order line.
 
 ### Test Admin Listing Review (Implemented)
 
@@ -561,11 +584,12 @@ Before considering your local setup complete, verify:
 - [ ] `POST /store/seller/onboard` creates a seller profile for an authenticated customer
 - [ ] `GET /store/sellers/:handle` returns a public seller profile + products
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
+- [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
 - [ ] `POST /admin/listings/:id/review` approves to `AVAILABLE`, edit-and-approves, or rejects with feedback
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (`PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Seller onboarding, seller listings, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
+> Remaining custom routes (`PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Seller onboarding, seller listings, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
 
 ---
 

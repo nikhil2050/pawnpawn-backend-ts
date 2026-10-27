@@ -8,6 +8,13 @@ BEGIN;
 -- contract while remaining safe to re-run in local development.
 -- See documentation/AI_CONTEXT.md §4.3 and §5.6.
 
+-- A source order-line makes lineage writes idempotent across event retries
+-- without treating a future resale to the same customer as a duplicate.
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS order_line_item_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_lineage_order_line
+  ON product_lineage(order_line_item_id)
+  WHERE order_line_item_id IS NOT NULL;
+
 -- Rename the former public state without losing existing approved inventory.
 -- `listing_status` is text, so this supports databases created before the
 -- AVAILABLE lifecycle name was adopted.

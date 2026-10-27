@@ -11,6 +11,7 @@ You are an expert full-stack engineer implementing marketplace core features and
 3. **Dedicated custom modules:** Use the custom `seller`, `listing`, `lineage`, and `hq_fulfillment` modules through Medusa v2 utilities. Do not alter Medusa core product tables.
 4. **Universal product provisioning:** The `product.created` subscriber handles products created through the Admin UI or Seller API. It ensures a standardized SKU (`CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`), one-of-one inventory (`manage_inventory = true`, `inventory_quantity = 1`), and an initial `PENDING_APPROVAL` listing.
 5. **Strict commit convention:** Every commit, code description, and pull request summary must use `<type>(<scope>): <description>`. Allowed types are `feat`, `fix`, `refactor`, `perf`, `docs`, and `chore`. Allowed scopes are `products`, `seller`, `listing`, `lineage`, `hq`, `cart`, `auth`, `admin`, `db`, and `config`.
+6. **SOLID boundaries:** Keep routes limited to HTTP/auth concerns, put checkout use cases in `src/workflows`, keep module services focused on their own data, and make subscribers idempotent integration adapters. Depend on Medusa module interfaces through the container instead of coupling modules to each other.
 
 ## Overview
 
@@ -85,7 +86,7 @@ Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backen
 │   │       ├── api/              # API routes: api/store/*, api/admin/* (file-based) + middlewares.ts
 │   │       │                     # GET/POST /admin/seller + GET/PATCH/DELETE /admin/seller/:id are implemented
 │   │       │                     # GET/POST /store/seller/listings, POST /store/seller/products, POST /store/seller/onboard, GET /store/sellers/:handle
-│   │       │                     # GET /admin/listings, POST /admin/listings/:id/review, POST /admin/hq-fulfillments/:id
+│   │       │                     # GET /admin/listings, POST /admin/listings/:id/review, POST /admin/hq-fulfillments/:id, POST /store/purchase
 │   │       ├── subscribers/      # Event subscribers (order.placed -> HQ fulfillment + lineage)
 │   │       └── workflows/        # Workflows and workflow steps
 │   └── storefront/               # OPTIONAL Next.js storefront (@dtc/storefront)
@@ -313,7 +314,7 @@ chore(config): register custom modules in medusa-config.js
 - Calling `this.list()` / `this.create()` / `this.update()` inside a `MedusaService` subclass. Generated methods are model-suffixed: `listSellers`, `createSellers`, `updateSellers`, `listProductLineages`, etc.
 - Resolving custom modules as `sellerModuleService` / `lineageModuleService`. Use `container.resolve("seller")` / `container.resolve("lineage")`.
 - Defining custom module table IDs as `UUID`. Medusa generates text IDs, so use `TEXT PRIMARY KEY`; also add `created_at`, `updated_at`, and `deleted_at`.
-- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/admin/custom/route.ts`, the admin seller CRUD (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`), the store seller routes (`src/api/store/seller/onboard/route.ts`, `src/api/store/seller/listings/route.ts`, `src/api/store/seller/listings/[id]/route.ts`, `src/api/store/seller/products/route.ts`, `src/api/store/sellers/[handle]/route.ts`), the admin listing/HQ routes (`src/api/admin/listings/route.ts`, `src/api/admin/listings/[id]/review/route.ts`, `src/api/admin/seller/[id]/listings/route.ts`, `src/api/admin/hq-fulfillments/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `PATCH /store/seller/me`, `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, or `/admin/lineage*`.
+- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/store/purchase/route.ts`, `src/api/admin/custom/route.ts`, the admin seller CRUD (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`), the store seller routes (`src/api/store/seller/onboard/route.ts`, `src/api/store/seller/listings/route.ts`, `src/api/store/seller/listings/[id]/route.ts`, `src/api/store/seller/products/route.ts`, `src/api/store/sellers/[handle]/route.ts`), and the admin listing/HQ routes (`src/api/admin/listings/route.ts`, `src/api/admin/listings/[id]/review/route.ts`, `src/api/admin/seller/[id]/listings/route.ts`, `src/api/admin/hq-fulfillments/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `PATCH /store/seller/me`, `POST/PATCH /store/products`, `/store/products/:id/lineage`, or `/admin/lineage*`.
 - Seeding buyers with raw `INSERT INTO customer` while expecting them to log in. Register them through `POST /auth/customer/emailpass/register` and `POST /store/customers` so auth identities are created.
 
 ## Off-Limits

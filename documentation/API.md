@@ -87,7 +87,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Seller field updates | `PATCH /store/seller/me` | **Planned** |
 | Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** (use `/store/seller/products`) |
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
-| Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | **Planned** |
+| Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | Purchase implemented; lineage REST planned |
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
 | Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
@@ -109,6 +109,7 @@ apps/backend/src/api/store/seller/onboard/route.ts          # POST /store/seller
 apps/backend/src/api/store/seller/listings/route.ts         # GET/POST /store/seller/listings
 apps/backend/src/api/store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
 apps/backend/src/api/store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
+apps/backend/src/api/store/purchase/route.ts                # POST /store/purchase (dummy checkout)
 apps/backend/src/api/middlewares.ts
 ```
 
@@ -216,7 +217,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), and the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/{id}`). `POST/PATCH /store/products`, auction, purchase, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/{id}`), and the MVP purchase path (`POST /store/purchase`). `POST/PATCH /store/products`, auctions, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 Product creation normalizes the handle and allocates a unique value server-side. When `abc` already exists, the backend tries `abc-2`, then `abc-3`, and so on before invoking Medusa's native product create handler. The Admin success notification includes the final persisted handle.
 
@@ -502,12 +503,26 @@ components:
         application/json:
           schema:
             type: object
-            required: [product_id, buyer_id]
+            required: [items]
             properties:
-              product_id:
+              items:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required: [variant_id]
+                  properties:
+                    variant_id:
+                      type: string
+                    quantity:
+                      type: integer
+                      enum: [1]
+              region_id:
                 type: string
-              buyer_id:
+              sales_channel_id:
                 type: string
+              shipping_address:
+                type: object
     RecordTransferRequest:
       content:
         application/json:
@@ -989,8 +1004,12 @@ paths:
                 properties:
                   order:
                     type: object
-                  lineage:
-                    $ref: '#/components/schemas/ProductLineage'
+                  payment:
+                    type: object
+                    example: { status: CAPTURED, provider: dummy }
+                  fulfillment:
+                    type: object
+                    example: { status: WAITING_FOR_ARRIVAL, per_line_item: true }
 
   /store/products/{id}/lineage:
     get:
@@ -1318,7 +1337,7 @@ paths:
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
-| POST | `/store/purchase` | Bearer/Cookie | Purchase fixed-price product | `201 Created` | Planned |
+| POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout for unique variants; creates per-line HQ and lineage records | `201 Created` | Implemented |
 | GET | `/store/products/:id/lineage` | No | Get ownership history | `200 OK` | Planned |
 
 ### Custom Module Admin APIs
@@ -1505,7 +1524,7 @@ Content-Type: application/json
 
 ### 6.4 Purchase Product
 
-> **Status: PLANNED** — `/store/purchase` is not implemented. When an order is placed through Medusa's core checkout, the `order.placed` subscriber marks the listing `SOLD`, creates an `hq_fulfillment` per line item, and records a lineage transfer. Lineage is currently recorded with `lineageService.recordTransfer(...)` or SQL.
+> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated customer and accepts one or more unique variants. The server calculates each price from the Medusa price set in the requested region; clients cannot set a line price. It locks all requested Listings, revalidates `AVAILABLE` status and stock, creates a Medusa order through `createOrderWorkflow`, performs a successful dummy capture, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. A real payment provider, durable reservation transaction, and public lineage route remain follow-up work.
 
 **Request:**
 ```http
@@ -1514,8 +1533,19 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "product_id": "prod_01JABCDEF123",
-  "buyer_id": "cust_01JXYZ789"
+  "items": [
+    { "variant_id": "variant_01JABCDEF123", "quantity": 1 }
+  ],
+  "region_id": "reg_01M5SSC7P6CPJDG955B1564RQT",
+  "sales_channel_id": "sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2",
+  "shipping_address": {
+    "first_name": "Sarah",
+    "last_name": "Johnson",
+    "address_1": "100 Market Street",
+    "city": "Los Angeles",
+    "country_code": "us",
+    "postal_code": "90001"
+  }
 }
 ```
 
@@ -1524,18 +1554,11 @@ Content-Type: application/json
 {
   "order": {
     "id": "order_01JABCDEF789",
-    "status": "completed",
-    "total": 2500.00,
+    "status": "pending",
     "customer_id": "cust_01JXYZ789"
   },
-  "lineage": {
-    "id": "lineage_01JABCDEF789",
-    "product_id": "prod_01JABCDEF123",
-    "seller_id": "seller_01JABCDEF123",
-    "buyer_id": "cust_01JXYZ789",
-    "price": 2500.00,
-    "transacted_at": "2026-01-15T12:00:00Z"
-  }
+  "payment": { "status": "CAPTURED", "provider": "dummy" },
+  "fulfillment": { "status": "WAITING_FOR_ARRIVAL", "per_line_item": true }
 }
 ```
 

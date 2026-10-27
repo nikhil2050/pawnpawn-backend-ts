@@ -107,6 +107,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   │   ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
         │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
         │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
+        │       │   │   ├── store/purchase/route.ts                # POST /store/purchase (dummy checkout)
         │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
         │       │   │   ├── admin/custom/route.ts # Placeholder only
         │       │   │   ├── admin/seller/route.ts # GET/POST /admin/seller
@@ -122,7 +123,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   ├── links/                   # Module links
         │       │   ├── search/                  # Product search index definition
         │       │   ├── subscribers/             # product.created marketplace provisioning; order.placed -> HQ fulfillment + lineage
-        │       │   └── workflows/               # Business logic workflows
+        │       │   └── workflows/               # Business logic workflows; purchase/dummy-checkout isolates checkout from HTTP
         │       ├── README.md                    # Medusa default
         │       └── node_modules/                # Installed (1362 packages)
 ```
@@ -227,8 +228,8 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Purchased listings transition to `SOLD` and remain retained for audit/history.
 - [x] **Implemented** — Product lineage records seller, buyer, price, and transaction time.
 - [x] **Implemented** — Resale can change the current Listing seller while lineage preserves prior ownership.
-- [x] **Partial** — Inventory quantity is seeded and normalized to one; atomic reservation/decrement during payment capture needs production checkout workflow hardening.
-- [ ] **Planned** — Dedicated `POST /store/purchase` orchestration with payment capture and idempotency.
+- [x] **Implemented (MVP)** — `POST /store/purchase` uses per-Listing locks, revalidates availability and stock, calculates prices on the server, creates an order with a dummy capture, then marks each Listing sold, locks inventory at zero, creates per-line HQ rows, and records lineage.
+- [ ] **Partial** — Payment-provider authorization and a database-backed reservation/outbox transaction remain required for production checkout durability.
 - [ ] **Planned** — Dedicated product lineage REST endpoints for buyers and admins.
 
 #### 4.4.7 HQ fulfillment and payouts
@@ -334,6 +335,7 @@ CREATE TABLE product_lineage (
     product_id VARCHAR(100) NOT NULL,
     seller_id TEXT REFERENCES seller(id),    -- nullable: buyer-to-buyer resale
     buyer_id VARCHAR(100),
+    order_line_item_id VARCHAR(100) UNIQUE,  -- idempotency key per sale line
     price DECIMAL(12, 2) NOT NULL,
     transacted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -341,7 +343,7 @@ CREATE TABLE product_lineage (
     deleted_at TIMESTAMPTZ
 );
 ```
-**Indexes**: `product_id`, `seller_id`, `buyer_id`, `transacted_at`
+**Indexes**: `product_id`, `seller_id`, `buyer_id`, `order_line_item_id` (unique), `transacted_at`
 
 > IDs are `TEXT`, not `UUID`, because Medusa generates text IDs. Treat them as opaque: service-created rows get ULID-like values, while seed rows may use `seller_*` / `lineage_*` or UUID-shaped text depending on when the DB was first seeded. `created_at`, `updated_at`, and `deleted_at` are required by Medusa's generated service queries.
 
@@ -607,7 +609,7 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-da
 
 ## 8. 🔄 Core Workflows
 
-> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`), admin listing review, HQ fulfillment transitions, seller onboarding, seller listings, and the **Sellers** admin page are implemented. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
+> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`), admin listing review, HQ fulfillment transitions, seller onboarding, seller listings, dummy `POST /store/purchase`, and the **Sellers** admin page are implemented. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
 
 ### 8.1 Admin Login (Implemented)
 ```
@@ -647,15 +649,38 @@ IMPLEMENTED: GET /admin/listings, POST /admin/listings/:id/review (admin review)
 PLANNED:     POST/PATCH /store/products, auction start/bid
 ```
 
-### 8.5 Purchase Flow (Planned REST; subscriber handles orders)
+### 8.5 Purchase Flow (Implemented MVP)
 ```
-PLANNED: POST /store/purchase
-  → would create order + product_lineage entry
+IMPLEMENTED: POST /store/purchase (authenticated customer)
+  → src/workflows/purchase/dummy-checkout.ts owns validation, native pricing, and locking
+  → accepts only quantity 1, locks Listing IDs, rechecks AVAILABLE + stock, then creates the order
+  → returns a successful dummy payment result after shared lifecycle processing
 
 CURRENT: order.placed subscriber (src/subscribers/order-placed-hq-fulfillment.ts)
-  → marks listing SOLD, creates hq_fulfillment per line item, records lineage
-CURRENT: lineageService.recordTransfer({ product_id, seller_id?, buyer_id, price })
+  → marks each Listing SOLD, drafts its product, locks inventory at zero, creates hq_fulfillment per line item
+CURRENT: lineageService.recordTransfer({ product_id, seller_id?, buyer_id, order_line_item_id, price })
+  → `order_line_item_id` is the retry key; the same buyer may buy a later resale.
 ```
+
+#### 8.5.1 Medusa API integration and production boundary
+
+The marketplace uses Medusa services and workflows as follows:
+
+| Concern | Medusa integration | Custom responsibility |
+|---|---|---|
+| Product creation | `createProductsWorkflow`, Product module | Create the Listing link and marketplace metadata |
+| Order creation | `createOrderWorkflow` | Enforce quantity-one Listing rules and run dummy payment response |
+| Pricing | Pricing module through the Product → Price Set link and `calculatePrices` | Use the selected region currency; never trust client prices |
+| Inventory | Query graph plus Inventory module | Verify stock before checkout and set linked levels to zero after sale |
+| Concurrency | Locking module `execute` with Listing keys | Prevent two buyers acquiring the same unique item |
+| Fulfillment | `order.placed` subscriber | Create one HQ row and one lineage row per order line |
+
+The checkout implementation is `src/workflows/purchase/dummy-checkout.ts`; the
+HTTP route only authenticates and serializes the response. The
+`order-placed-hq-fulfillment.ts` subscriber is reusable for native Medusa orders
+and the dummy checkout. MVP limitations are dummy payment capture and no
+database-backed reservation/outbox transaction; production payment authorization
+and transactional inventory reservation must be added before launch.
 
 ### 8.6 Lineage Query (Planned REST — module/SQL works)
 ```
@@ -762,7 +787,7 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 ### 10.5 Purchase/Lineage
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
-| POST | `/store/purchase` | Bearer/Cookie | Purchase product | Planned |
+| POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout; per-line SOLD, HQ fulfillment, and lineage processing | Implemented (MVP) |
 | GET | `/store/products/:id/lineage` | No | Ownership history | Planned |
 
 ### 10.6 Custom Module Admin REST
@@ -845,4 +870,4 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*
+*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, dummy purchase checkout with per-line HQ/lineage processing implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*

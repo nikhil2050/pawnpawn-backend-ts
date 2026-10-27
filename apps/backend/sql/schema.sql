@@ -199,6 +199,10 @@ CREATE TABLE IF NOT EXISTS product_lineage (
     -- Java: @Column(length = 100) — customer reference, no local FK
     buyer_id VARCHAR(100),
 
+    -- Originating Medusa order line. Unique so event delivery/retries create
+    -- one provenance entry per completed marketplace line item.
+    order_line_item_id VARCHAR(100),
+
     -- Transaction price at time of sale (decimal with 2 places)
     -- Java: @Column(nullable = false, precision = 12, scale = 2) with BigDecimal
     price DECIMAL(12, 2) NOT NULL,
@@ -215,6 +219,10 @@ CREATE TABLE IF NOT EXISTS product_lineage (
     deleted_at TIMESTAMPTZ
 );
 
+-- Existing local databases predate the source-order-line idempotency key.
+-- Add it before its index is created so this script remains safe to re-run.
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS order_line_item_id VARCHAR(100);
+
 -- Index on product_id for querying a product's ownership history
 CREATE INDEX IF NOT EXISTS idx_product_lineage_product ON product_lineage(product_id);
 
@@ -223,6 +231,10 @@ CREATE INDEX IF NOT EXISTS idx_product_lineage_seller ON product_lineage(seller_
 
 -- Index on buyer_id for querying a buyer's purchase history
 CREATE INDEX IF NOT EXISTS idx_product_lineage_buyer ON product_lineage(buyer_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_lineage_order_line
+    ON product_lineage(order_line_item_id)
+    WHERE order_line_item_id IS NOT NULL;
 
 -- Index on transacted_at for time-based queries (e.g., sales this month)
 CREATE INDEX IF NOT EXISTS idx_product_lineage_transacted ON product_lineage(transacted_at);

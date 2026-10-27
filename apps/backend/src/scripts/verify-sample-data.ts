@@ -62,6 +62,9 @@ export default async function verifySampleData({ container }: ExecArgs) {
     product_id: "prod_snoop_001",
     seller_id: snoop?.id ?? null,
     buyer_id: "cust_verify_temp",
+    // The temporary source line mirrors checkout's idempotency contract.
+    // See documentation/AI_CONTEXT.md §5.6.2 and §8.5.
+    order_line_item_id: "item_verify_temp",
     price: 1,
   })
   const verifyHistory = await lineage.getLineageHistory("prod_snoop_001")

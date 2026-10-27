@@ -11,16 +11,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
   const listingService = req.scope.resolve<any>("listing")
   const listing = await listingService.retrieveListing(req.params.id)
+  if (listing.listing_status === "SOLD") {
+    return res.status(409).json({ message: "Sold listings cannot be re-reviewed" })
+  }
   const reviewer = (req as any).auth_context?.actor_id ?? "admin"
-  if (action === "RETURN" || action === "REJECT") {
-    return res.json({ listing: await listingService.reviewListing(listing.id, "REJECTED", reviewer, feedback) })
+  const productService = req.scope.resolve<any>(Modules.PRODUCT)
+
+  if (action === "REJECT" || action === "RETURN") {
+    // Drafting the product prevents Medusa's core catalog route from exposing
+    // a listing that an administrator has removed from marketplace review.
+    // See documentation/AI_CONTEXT.md §4.2 and §5.1.
+    const targetStatus = action === "REJECT" ? "REJECTED" : "PENDING_APPROVAL"
+    await productService.updateProducts({ id: listing.product_id, status: "draft" })
+    const reviewed = await listingService.reviewListing(listing.id, targetStatus, reviewer, feedback)
+    return res.json({ listing: reviewed })
   }
   const edits = edited_data ?? corrections
   if (action === "EDIT_AND_APPROVE" && !edits) {
     return res.status(400).json({ message: "edited_data is required for EDIT_AND_APPROVE" })
   }
-  if (edits) await req.scope.resolve<any>(Modules.PRODUCT).updateProducts({ id: listing.product_id, ...edits })
-  const reviewed = await listingService.reviewListing(listing.id, "LISTED", reviewer)
-  await req.scope.resolve<any>(Modules.PRODUCT).updateProducts({ id: listing.product_id, status: "published" })
+  if (edits) await productService.updateProducts({ id: listing.product_id, ...edits })
+  const reviewed = await listingService.reviewListing(listing.id, "AVAILABLE", reviewer, feedback)
+  await productService.updateProducts({ id: listing.product_id, status: "published" })
   res.json({ listing: reviewed })
 }

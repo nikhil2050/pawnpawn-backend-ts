@@ -8,7 +8,7 @@ export default async function orderPlaced({ event: { data }, container }: Subscr
   const hq = container.resolve<any>("hq_fulfillment")
   const lineage = container.resolve<any>("lineage")
   for (const item of order.items ?? []) {
-    const [listing] = await listings.listListings({ product_id: item.product_id, listing_status: "LISTED" }, { take: 1 })
+    const [listing] = await listings.listListings({ product_id: item.product_id, listing_status: "AVAILABLE" }, { take: 1 })
     if (!listing) continue
     await listings.updateListings({ id: listing.id, listing_status: "SOLD" })
     await hq.createHqFulfillments({ order_id: order.id, order_line_item_id: item.id, listing_id: listing.id, product_id: item.product_id, seller_id: listing.seller_id, buyer_id: order.customer_id ?? null, hq_status: "WAITING_FOR_ARRIVAL" })

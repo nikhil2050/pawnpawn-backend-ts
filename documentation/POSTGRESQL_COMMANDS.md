@@ -51,6 +51,15 @@ npm run db:import
 psql -h localhost -U postgres -d pawnpawn_db -f sql/schema.sql
 ```
 
+### Align the Listing public state on an existing database
+```bash
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 \
+  -f sql/marketplace_prompt_alignment.sql
+```
+
+This converts the former `LISTED` state to `AVAILABLE` and updates the Listing
+status constraint without removing historical Listing records.
+
 ### Verify custom tables were created
 ```sql
 \dt
@@ -73,6 +82,14 @@ ORDER BY t.typname, e.enumsortorder;
 ```sql
 \d listing
 -- Look for: listing_status, listing_type, seller_id, product_id, admin_feedback
+```
+
+```sql
+SELECT listing_status, COUNT(*)
+FROM listing
+GROUP BY listing_status
+ORDER BY listing_status;
+-- Public inventory uses AVAILABLE; PENDING_APPROVAL and REJECTED remain hidden.
 ```
 
 ---

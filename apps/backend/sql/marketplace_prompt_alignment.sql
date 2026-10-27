@@ -8,6 +8,32 @@ BEGIN;
 -- contract while remaining safe to re-run in local development.
 -- See documentation/AI_CONTEXT.md §4.3 and §5.6.
 
+-- Rename the former public state without losing existing approved inventory.
+-- `listing_status` is text, so this supports databases created before the
+-- AVAILABLE lifecycle name was adopted.
+DO $$
+DECLARE v_constraint_name TEXT;
+BEGIN
+  SELECT conname INTO v_constraint_name
+    FROM pg_constraint
+   WHERE conrelid = 'listing'::regclass
+     AND contype = 'c'
+     AND pg_get_constraintdef(oid) LIKE '%listing_status%'
+   LIMIT 1;
+
+  IF v_constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE listing DROP CONSTRAINT %I', v_constraint_name);
+  END IF;
+
+  UPDATE listing
+     SET listing_status = 'AVAILABLE'
+   WHERE listing_status = 'LISTED';
+
+  ALTER TABLE listing
+    ADD CONSTRAINT listing_listing_status_check
+    CHECK (listing_status IN ('PENDING_APPROVAL', 'AVAILABLE', 'SOLD', 'REJECTED'));
+END $$;
+
 -- Native Medusa fashion taxonomy.
 INSERT INTO product_category (id, name, handle, description, mpath, is_active, is_internal, rank, created_at, updated_at)
 VALUES
@@ -178,7 +204,7 @@ COMMIT;
 
 SELECT 'aligned_sellers' AS entity, COUNT(*) FROM seller
 UNION ALL SELECT 'aligned_listings', COUNT(*) FROM listing
-UNION ALL SELECT 'listed_products', COUNT(*) FROM listing WHERE listing_status = 'LISTED'
+UNION ALL SELECT 'available_products', COUNT(*) FROM listing WHERE listing_status = 'AVAILABLE'
 UNION ALL SELECT 'native_marketplace_categories', COUNT(*) FROM product_category WHERE id IN ('pcat_apparel', 'pcat_outerwear', 'pcat_footwear')
 UNION ALL SELECT 'native_marketplace_options', COUNT(*) FROM product_option WHERE title IN ('Size', 'Condition') AND deleted_at IS NULL
 UNION ALL SELECT 'inventory_managed_variants', COUNT(*) FROM product_variant WHERE manage_inventory = true;

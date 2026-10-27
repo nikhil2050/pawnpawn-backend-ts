@@ -371,7 +371,7 @@ components:
           type: string
         listing_status:
           type: string
-          enum: [PENDING_APPROVAL, LISTED, SOLD, REJECTED]
+          enum: [PENDING_APPROVAL, AVAILABLE, SOLD, REJECTED]
           default: PENDING_APPROVAL
         listing_type:
           type: string
@@ -641,7 +641,7 @@ paths:
   /store/sellers/{handle}:
     get:
       tags: [Seller]
-      summary: Public seller profile and listed products
+      summary: Public seller profile and available products
       parameters:
         - name: handle
           in: path
@@ -1280,7 +1280,7 @@ paths:
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard the authenticated customer as a seller | `201 Created` | Implemented |
-| GET | `/store/sellers/:handle` | No | Public seller profile + listed products | `200 OK` | Implemented |
+| GET | `/store/sellers/:handle` | No | Public seller profile + available products | `200 OK` | Implemented |
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | List the authenticated seller's listings | `200 OK` | Implemented |
 | POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing row) | `201 Created` | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update the authenticated seller's own listing | `200 OK` | Implemented |
@@ -1375,7 +1375,7 @@ const lineageService = container.resolve("lineage")
 
 | Method | Description |
 |--------|-------------|
-| `reviewListing(id, status, userId, feedback?)` | Set `listing_status` to `LISTED` or `REJECTED`, record reviewer, rejection feedback, and admin feedback |
+| `reviewListing(id, status, userId, feedback?)` | Set a non-sold Listing to `PENDING_APPROVAL`, `AVAILABLE`, or `REJECTED`; record reviewer and timestamp; preserve earlier feedback when no new note is supplied |
 
 **HqFulfillmentModuleService**: no custom methods beyond generated CRUD (`listHqFulfillments`, `retrieveHqFulfillment`, `createHqFulfillments`, `updateHqFulfillments`, `deleteHqFulfillments`).
 
@@ -1708,7 +1708,7 @@ Authorization: Bearer <admin_token>
 
 ### 6.8 Review a Listing (Working Today)
 
-> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` accepts `APPROVE`, `EDIT_AND_APPROVE`, or `REJECT` (legacy `RETURN` is also accepted), publishes approved products, and retains review feedback.
+> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` re-reviews any non-sold Listing. `APPROVE` and `EDIT_AND_APPROVE` publish the product and set the Listing to `AVAILABLE`; `REJECT` sets it to `REJECTED` and drafts the product. Legacy `RETURN` resets it to `PENDING_APPROVAL` and drafts the product. Each action records the reviewer, timestamp, and supplied feedback. A dedicated Admin UI review screen is still pending.
 
 ```http
 POST /admin/listings/listing_01M.../review
@@ -1717,6 +1717,34 @@ Content-Type: application/json
 
 {
   "action": "APPROVE"
+}
+```
+
+```http
+POST /admin/listings/listing_01M.../review
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "action": "RETURN",
+  "feedback": "Please provide a clearer certificate image"
+}
+```
+
+`RETURN` is retained for backwards compatibility and sets the Listing to
+`PENDING_APPROVAL`; it is useful when an available or rejected Listing needs
+another seller revision. `SOLD` Listings return `409 Conflict` and cannot be
+re-reviewed.
+
+```http
+POST /admin/listings/listing_01M.../review
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "action": "EDIT_AND_APPROVE",
+  "edited_data": { "title": "Authenticated vintage jacket" },
+  "feedback": "Title corrected during review"
 }
 ```
 
@@ -1736,10 +1764,11 @@ Content-Type: application/json
 {
   "listing": {
     "id": "listing_01M...",
-    "listing_status": "LISTED",
+    "listing_status": "AVAILABLE",
     "reviewed_by": "01M5ADMIN...",
     "reviewed_at": "2026-10-26T12:00:00.000Z",
-    "rejection_feedback": null
+    "rejection_feedback": null,
+    "admin_feedback": "Title corrected during review"
   }
 }
 ```

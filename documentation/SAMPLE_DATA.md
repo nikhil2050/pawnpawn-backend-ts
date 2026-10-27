@@ -4,7 +4,7 @@ The canonical seed represents the celebrity-to-fan marketplace described in [`AI
 
 Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, native Medusa catalog taxonomy/options, canonical celebrity SKUs, inventory records, and provenance/lineage history.
 
-> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller onboarding, seller listing CRUD, the `product.created` SKU/inventory/Listing provisioning subscriber, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`). `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` still have no custom REST routes — use the module services or SQL. See `API.md` → Current Implementation Status.
+> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller onboarding, seller listing CRUD, the `product.created` SKU/inventory/Listing provisioning subscriber, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`). Review can move any non-sold Listing between `AVAILABLE`, `REJECTED`, and `PENDING_APPROVAL`, records the reviewer and latest feedback, and drafts products that are rejected or returned. It is API-only until an Admin review screen exists. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` still have no custom REST routes — use the module services or SQL. See `API.md` → Current Implementation Status.
 
 <!-- The seed description documents why native Medusa taxonomy and canonical
      celebrity SKUs are loaded alongside the custom marketplace records. See
@@ -143,7 +143,7 @@ Do not `INSERT INTO customer` directly — that skips the `emailpass` identity a
 
 Each product has:
 
-- One variant (`manage_inventory = false`, so it is immediately purchasable)
+- One variant with `manage_inventory = true`, `allow_backorder = false`, and one stocked unit
 - USD and INR prices
 - Link to the Default Sales Channel
 - `metadata` with `seller_id`, `seller_handle`, `seller_name`, `event`, `condition`, `provenance`, `certificate_of_authenticity`

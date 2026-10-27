@@ -376,11 +376,21 @@ curl -s http://localhost:9000/store/sellers/snoopdogg
 
 ```bash
 TOKEN=<admin_token>
+# GET /admin/listings first and replace <listing_id> with a PENDING_APPROVAL Listing.
 curl -s -X POST http://localhost:9000/admin/listings/listing_01M.../review \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"action":"APPROVE"}'
+  -d '{"action":"APPROVE","feedback":"Approved after review"}'
 ```
+
+The response has `listing_status: "AVAILABLE"` and the linked product becomes
+`published`. Use `EDIT_AND_APPROVE` with an `edited_data` object to update the
+linked product during approval, or use `REJECT` with `feedback` to set
+`listing_status: "REJECTED"` and draft the product. Re-review is supported:
+an Admin can approve a rejected Listing or reject an available one. Legacy
+`RETURN` sets a non-sold Listing to `PENDING_APPROVAL` and also drafts its
+product. The Admin UI has no Listing review page yet; test this endpoint with
+an Admin token.
 
 ### Test HQ Fulfillment Lifecycle (Implemented)
 
@@ -551,7 +561,7 @@ Before considering your local setup complete, verify:
 - [ ] `POST /store/seller/onboard` creates a seller profile for an authenticated customer
 - [ ] `GET /store/sellers/:handle` returns a public seller profile + products
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
-- [ ] `POST /admin/listings/:id/review` approves/returns a listing
+- [ ] `POST /admin/listings/:id/review` approves to `AVAILABLE`, edit-and-approves, or rejects with feedback
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 

@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS listing (
     seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
     product_id TEXT NOT NULL UNIQUE REFERENCES product(id) ON DELETE RESTRICT,
     listing_status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL'
-      CHECK (listing_status IN ('PENDING_APPROVAL', 'LISTED', 'SOLD', 'REJECTED')),
+      CHECK (listing_status IN ('PENDING_APPROVAL', 'AVAILABLE', 'SOLD', 'REJECTED')),
     listing_type TEXT NOT NULL DEFAULT 'FIXED_PRICE'
       CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
     item_condition TEXT,

@@ -282,7 +282,7 @@ SELECT
   'listing_' || p.id,
   (p.metadata->>'seller_id')::text,
   p.id,
-  'LISTED',
+  'AVAILABLE',
   COALESCE((SELECT l2.listing_type FROM listing l2 WHERE l2.product_id = p.id), 'FIXED_PRICE'),
   p.metadata->>'condition',
   NOW(), NOW()

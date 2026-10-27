@@ -33,7 +33,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
 | Concept | Description |
 |---------|-------------|
 | **Seller** | Marketplace vendor with verification status, Razorpay Connect account, trust level (`trusted`/`untrusted`), and category (`celebrity`, `influencer`, `musician`, `athlete`, `other`) |
-| **Listing** | A seller's product listing with lifecycle (`PENDING_APPROVAL` → `LISTED`/`SOLD`/`REJECTED`), `listing_type` (`FIXED_PRICE`/`AUCTION`), and condition |
+| **Listing** | A seller's product listing with lifecycle (`PENDING_APPROVAL` → `AVAILABLE`/`SOLD`/`REJECTED`), `listing_type` (`FIXED_PRICE`/`AUCTION`), and condition |
 | **Product** | Items listed for sale - either FIXED_PRICE or AUCTION |
 | **Product Lineage** | Complete ownership chain: seller → buyer → buyer → ... |
 | **HQ Fulfillment** | One record per purchased order line, progressing `WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED` → `DISPATCHED` → `DELIVERED`, with authenticity certificate and payout release |
@@ -133,7 +133,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
 
 ### 4.1 Marketplace architecture summary
 
-Seller identity is a Medusa Customer identity plus one Seller profile. Product ownership is normalized in the Listing module (`seller_id` + `product_id`), while product metadata keeps seller display fields for compatibility. Listings move through `PENDING_APPROVAL → LISTED → SOLD` or `REJECTED`; seller edits resubmit a rejected listing. Mixed-seller carts are supported, so HQ fulfillment is per order line. Payout release occurs after delivery. See the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) for the full decision record and follow-up work.
+Seller identity is a Medusa Customer identity plus one Seller profile. Product ownership is normalized in the Listing module (`seller_id` + `product_id`), while product metadata keeps seller display fields for compatibility. Listings move through `PENDING_APPROVAL → AVAILABLE → SOLD` or `REJECTED`; seller edits resubmit a rejected listing. Mixed-seller carts are supported, so HQ fulfillment is per order line. Payout release occurs after delivery. See the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) for the full decision record and follow-up work.
 
 ### 4.2 Prompt-aligned implementation rules
 
@@ -147,7 +147,7 @@ Seller identity is a Medusa Customer identity plus one Seller profile. Product o
 - Admin product creation derives the Handle from Title as lowercase words joined with hyphens. Hyphens are removed from the Title input and rejected by the Admin/Seller product middleware; generated handles are the only place this separator is introduced.
 - Product creation checks the normalized handle against Medusa products in the backend. If it already exists, the request is rewritten to the next available suffix (`handle-2`, `handle-3`, ...), and the Admin success toast displays the final handle returned by Medusa.
 - Product-creation middleware enforces one value per option type for Admin and Seller creation. Adding an existing Admin option such as Size, Colour, or Authenticity starts with no value selected; the admin must choose one. The form reduces any retained legacy selection to its latest value, and choosing another value replaces the prior choice. The option value field uses the neutral localized `Select` placeholder rather than Medusa's colour-specific `Red, Blue, Green` example. The startup patch updates the Dashboard package and Medusa's generated `.medusa` Admin asset, adds a new route-asset URL to avoid browser reuse of the prior bundle, and clears the disposable Vite dependency cache so `/app/entry.jsx` is rebuilt from the corrected code. Repeating an option title or submitting an option `values` array with more than one value returns `400`, preserving the one-physical-item, one-variant model.
-- Admin review accepts `APPROVE`, `EDIT_AND_APPROVE`, and `REJECT` (legacy `RETURN` remains accepted). Feedback is retained on the Listing and seller edits resubmit it to `PENDING_APPROVAL`.
+- Admin review accepts `APPROVE`, `EDIT_AND_APPROVE`, and `REJECT` from any non-sold state. Approval makes the Listing `AVAILABLE` and publishes its product; rejection makes it `REJECTED`, drafts its product, and records the reviewer and latest feedback. Legacy `RETURN` resets a non-sold Listing to `PENDING_APPROVAL` and drafts its product. Seller edits also resubmit to `PENDING_APPROVAL`. The API is implemented; a dedicated Admin review page is still pending.
 - Sold unique items retain product, SKU, Listing, lineage, and HQ records; inventory becomes zero. Mixed carts create one HQ row per order line and payout release is gated by `DELIVERED`.
 
 ### 4.3 Current database alignment (local `pawnpawn_db`)
@@ -158,7 +158,7 @@ Applied with `sql/marketplace_prompt_alignment.sql`:
 |---|---:|
 | Sellers | 8 |
 | Products | 17 (13 marketplace products, 4 draft Medusa demos) |
-| Listings | 13, all currently `LISTED` |
+| Listings | 13, all currently `AVAILABLE` |
 | Marketplace inventory | 13 unique variants, one stocked unit each |
 | Native fashion categories | Apparel, Outerwear, Footwear |
 | Native campaign collection | Karan Johar Fall Drop |
@@ -198,7 +198,7 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — New listings start as `PENDING_APPROVAL` and remain hidden from the public catalog.
 - [x] **Implemented** — Seller can list and update only their own listings.
 - [x] **Implemented** — Rejected listings can be edited and resubmitted for review.
-- [x] **Implemented** — Listing status supports `PENDING_APPROVAL`, `LISTED`, `SOLD`, and `REJECTED`.
+- [x] **Implemented** — Listing status supports `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, and `REJECTED`.
 - [x] **Implemented** — Listing type supports `FIXED_PRICE` and `AUCTION` at the module level.
 - [x] **Partial** — Auction bidding and auction settlement endpoints are not implemented.
 
@@ -207,6 +207,7 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Admin can approve a listing with `APPROVE`.
 - [x] **Implemented** — Admin can edit product data and approve with `EDIT_AND_APPROVE`.
 - [x] **Implemented** — Admin can reject/return a listing with feedback using `REJECT` or legacy `RETURN`.
+- [x] **Implemented** — Admin can re-review any non-sold Listing: approve a rejected Listing, reject an available Listing, or return it to `PENDING_APPROVAL`.
 - [x] **Implemented** — Reviewer, review timestamp, rejection feedback, and admin feedback are stored.
 - [ ] **Partial** — A dedicated append-only review audit table/event log is still recommended for multiple decisions per listing.
 - [x] **Implemented** — Admin listing endpoints expose seller/listing relationships and lifecycle data.
@@ -214,11 +215,11 @@ Status values: **Implemented** = available in the repository and local database;
 
 #### 4.4.5 Buyer storefront and search
 
-- [x] **Implemented** — Public seller profiles return active seller information and listed inventory.
+- [x] **Implemented** — Public seller profiles return active seller information and available inventory.
 - [x] **Partial** — Product visibility is controlled through Listing status in custom seller/profile routes; the core Medusa `/store/products` route still needs a Listing-aware filter middleware/serializer.
 - [x] **Implemented** — Native category, collection, and option values are present for storefront filtering/search indexing.
-- [ ] **Planned** — A dedicated `GET /store/products` marketplace serializer with explicit `LISTED` filtering and seller fields.
-- [ ] **Partial** — Seller profile route returns active listed inventory; a dedicated public sold-archive response is still pending.
+- [ ] **Planned** — A dedicated `GET /store/products` marketplace serializer with explicit `AVAILABLE` filtering and seller fields.
+- [ ] **Partial** — Seller profile route returns active available inventory; a dedicated public sold-archive response is still pending.
 
 #### 4.4.6 Checkout, inventory, lineage, and resale
 
@@ -257,7 +258,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 
 - A celebrity seller uses the same Medusa Customer identity as a buyer. A Customer can have at most one Seller profile and can still purchase as a fan.
 - A seller can own many products. The normalized relationship is `listing.seller_id -> listing.product_id`; product metadata fields `seller_id`, `seller_handle`, and `seller_name` are denormalized compatibility fields.
-- The Listing module owns marketplace state: `PENDING_APPROVAL`, `LISTED`, `SOLD`, or `REJECTED`. Medusa Product remains the commerce/catalog primitive.
+- The Listing module owns marketplace state: `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, or `REJECTED`. Medusa Product remains the commerce/catalog primitive.
 - Seller reassignment on resale changes the current Listing seller. `product_lineage` preserves the original seller and every prior owner.
 - Rejection is decided per listing. An admin may return an item with feedback for seller edits, or correct the listing and approve it. Both actions must be auditable.
 - One buyer cart may contain products from multiple sellers. HQ fulfillment is therefore one record per order line/listing, never one record per order.
@@ -293,7 +294,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 - Public seller: `GET /store/sellers/:handle`.
 - Admin listings: `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`.
 - HQ operations: `POST /admin/hq-fulfillments/:id` with `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, or `MARK_DELIVERED`.
-- `order.placed` creates HQ records, marks matching listed items sold, and records lineage.
+- `order.placed` creates HQ records, marks matching available items sold, and records lineage.
 
 ### 5.5 Known follow-up work
 
@@ -354,7 +355,7 @@ CREATE TABLE listing (
     seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
     product_id TEXT NOT NULL UNIQUE REFERENCES product(id) ON DELETE RESTRICT,
     listing_status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL'
-      CHECK (listing_status IN ('PENDING_APPROVAL', 'LISTED', 'SOLD', 'REJECTED')),
+      CHECK (listing_status IN ('PENDING_APPROVAL', 'AVAILABLE', 'SOLD', 'REJECTED')),
     listing_type TEXT NOT NULL DEFAULT 'FIXED_PRICE'
       CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
     item_condition TEXT,
@@ -397,7 +398,7 @@ CREATE INDEX IF NOT EXISTS idx_hq_fulfillment_seller_status ON hq_fulfillment(se
 | Enum Name | Values | Used By |
 |-----------|--------|---------|
 | `seller_verification_status` | `PENDING`, `VERIFIED` | `seller.verification_status` |
-| `listing_status` | `PENDING_APPROVAL`, `LISTED`, `SOLD`, `REJECTED` | `listing.listing_status` |
+| `listing_status` | `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, `REJECTED` | `listing.listing_status` |
 | `hq_status` | `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED` | `hq_fulfillment.hq_status` |
 
 > `seller.seller_trust`, `seller.seller_category`, and `listing.listing_type` are **VARCHAR with defaults**, not PostgreSQL enums, so new values can be added without a migration. Application-level values are documented in `SAMPLE_DATA.md`.
@@ -638,7 +639,7 @@ CURRENT: sellerService.createSellers({ handle, store_name, razorpay_account_id, 
 ### 8.4 Product Listing (Implemented via seller listings)
 ```
 IMPLEMENTED: GET /store/products, GET /store/products/:id (Medusa core)
-IMPLEMENTED: GET /store/sellers/:handle (public seller profile + listed products)
+IMPLEMENTED: GET /store/sellers/:handle (public seller profile + available products)
 IMPLEMENTED: GET/POST /store/seller/listings and POST /store/seller/products (seller listing CRUD)
 IMPLEMENTED: PATCH /store/seller/listings/:id (own listings only)
 IMPLEMENTED: product.created subscriber (SKU, one-unit inventory, seller fallback, and Listing provisioning for Seller/Admin product creation)
@@ -733,7 +734,7 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard authenticated customer as seller | Implemented |
-| GET | `/store/sellers/:handle` | No | Public seller profile + listed products | Implemented |
+| GET | `/store/sellers/:handle` | No | Public seller profile + available products | Implemented |
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | Authenticated seller's listings | Implemented |
 | POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing) | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update own listing | Implemented |

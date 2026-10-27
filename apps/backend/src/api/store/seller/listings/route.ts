@@ -1,5 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
+import { createProductsWorkflow } from "@medusajs/medusa/core-flows"
 import { randomUUID } from "node:crypto"
 
 const currentSeller = async (req: MedusaRequest) => {
@@ -33,10 +33,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   })) {
     return res.status(400).json({ message: "each product option must have exactly one value; a listing has one variant" })
   }
-  const productService = req.scope.resolve<any>(Modules.PRODUCT)
   // Generate the celebrity SKU before product creation so the unique item can
-  // be reconciled with Medusa inventory and the Listing after creation.
-  // See documentation/AI_CONTEXT.md §4.2 and §8.4.
+  // be reconciled with Medusa inventory and the Listing after creation. The
+  // native workflow preserves Medusa's category, collection, option, pricing,
+  // and inventory behavior. See documentation/AI_CONTEXT.md §4.2 and §8.4.
   const handle = body.handle?.trim() || `${body.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now()}`
   const shortId = randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()
   const categoryPrefix = body.category_id?.includes("footwear") ? "FTW" : body.category_id?.includes("outerwear") ? "OUT" : "APP"
@@ -50,7 +50,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       }, {}))
     : [{ title: "Item", values: ["Unique"] }]
   const variantOptions = Object.fromEntries((body.options ?? []).filter((option: any) => option?.title && option?.value).map((option: any) => [option.title, option.value]))
-  const product = await productService.createProducts({
+  const productInput = {
     title: body.title.trim(),
     handle,
     description: body.description?.trim(),
@@ -59,9 +59,33 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     collection_id: body.collection_id,
     options: optionInput,
     variants: [{ title: "Unique", sku, manage_inventory: true, inventory_quantity: 1, allow_backorder: false, options: Object.keys(variantOptions).length ? variantOptions : { Item: "Unique" }, prices: [{ amount: Math.round(Number(body.price) * 100), currency_code: body.currency_code ?? "usd" }] }],
-    metadata: { images: body.images ?? [], seller_id: profile.id, seller_handle: profile.handle, seller_name: profile.store_name, category_id: body.category_id, collection_id: body.collection_id },
+    metadata: { images: body.images ?? [], seller_id: profile.id, seller_handle: profile.handle, seller_name: profile.store_name, category_id: body.category_id, collection_id: body.collection_id, item_condition: body.condition, listing_type: body.listing_type === "AUCTION" ? "AUCTION" : "FIXED_PRICE" },
+  }
+  const { result: products } = await createProductsWorkflow(req.scope).run({
+    input: { products: [productInput] as never },
   })
+  const [product] = products
+  if (!product) return res.status(500).json({ message: "Product creation did not return a product" })
   const listing = req.scope.resolve<any>("listing")
-  const created = await listing.createListings({ seller_id: profile.id, product_id: product.id, listing_status: "PENDING_APPROVAL", listing_type: body.listing_type === "AUCTION" ? "AUCTION" : "FIXED_PRICE", item_condition: body.condition })
+  const [existing] = await listing.listListings({ product_id: product.id }, { take: 1 })
+  let created = existing
+  if (!created) {
+    try {
+      created = await listing.createListings({ seller_id: profile.id, product_id: product.id, listing_status: "PENDING_APPROVAL", listing_type: body.listing_type === "AUCTION" ? "AUCTION" : "FIXED_PRICE", item_condition: body.condition })
+    } catch (error) {
+      // The product.created subscriber can provision the same Listing first.
+      // Re-read the unique product mapping instead of failing the seller request.
+      const [createdBySubscriber] = await listing.listListings({ product_id: product.id }, { take: 1 })
+      if (!createdBySubscriber) throw error
+      created = createdBySubscriber
+    }
+  }
+  if (created.seller_id === profile.id) {
+    created = await listing.updateListings({
+      id: created.id,
+      listing_type: body.listing_type === "AUCTION" ? "AUCTION" : "FIXED_PRICE",
+      item_condition: body.condition,
+    })
+  }
   res.status(201).json({ listing: created, product })
 }

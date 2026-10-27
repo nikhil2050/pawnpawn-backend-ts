@@ -76,6 +76,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Store catalog | `GET /store/products`, `GET /store/products/:id` | Implemented (Medusa core) |
 | Store customers | `POST /store/customers` | Implemented (Medusa core) |
 | Admin core | Regions, products, customers, orders, API keys | Implemented (Medusa core) |
+| Product-created marketplace provisioning | `product.created` subscriber | Implemented |
 | Seller module | `SellerModuleService` (CRUD + trust/category methods) | Implemented (service only) |
 | Lineage module | `LineageModuleService` (`recordTransfer`, `getLineageHistory`, `getCurrentOwner`) | Implemented (service only) |
 | Listing module | `ListingModuleService` (`reviewListing`) | Implemented (service only) |
@@ -1455,7 +1456,7 @@ Content-Type: application/json
 
 ### 6.3 Create a Listing (Implemented)
 
-> **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/products` (the existing `/store/seller/listings` route is an alias). The route creates a draft Medusa product with native category/collection/options, one inventory-managed variant with a canonical celebrity SKU, and a `Listing` row in `PENDING_APPROVAL`. Direct `POST /store/products` is **Planned**.
+> **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/products` (the existing `/store/seller/listings` route is an alias). The route resolves the Seller from the authenticated customer session and uses Medusa's `createProductsWorkflow` with native category/collection/options. The `product.created` subscriber then standardizes every product created through the Seller API or native Admin UI: it assigns a canonical SKU, enables one-unit inventory, and creates an idempotent `PENDING_APPROVAL` Listing. Admin-created products without seller metadata use the `system` Seller and `CELEB-SYSTEM-GEN-[SHORT_UUID]`. Direct `POST /store/products` is **Planned**.
 
 Product creation accepts one value per option type. In Admin, adding Size, Colour, Authenticity, or another existing option starts with no selected value; any retained legacy selection is reduced to its latest value. Choose one value, and choosing another replaces the prior choice. Its value control shows the neutral localized `Select` placeholder. The local Admin bundle receives the same patch before development and production starts, with a new route-asset URL and a cleared Vite dependency cache to prevent reuse of an earlier cached bundle. Repeating an option title or supplying multiple values is rejected, so a product creates exactly one variant.
 

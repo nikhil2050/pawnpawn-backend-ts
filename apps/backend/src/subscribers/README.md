@@ -1,6 +1,8 @@
 # Custom subscribers
 
-Subscribers maintain cross-module marketplace synchronization described in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record), including seller metadata sync and order-to-HQ creation.
+Subscribers maintain cross-module marketplace synchronization described in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record), including product-created marketplace provisioning, seller metadata sync, and order-to-HQ creation.
+
+`product-created.ts` listens for `product.created` from the Seller API and native Admin UI. It repairs or assigns standardized SKUs, enables one-of-one inventory, provisions a `PENDING_APPROVAL` Listing, and falls back to the `system` Seller when product metadata has no Seller context. It is idempotent so it can safely run alongside the Seller listing route.
 
 Subscribers handle events emitted in the Medusa application.
 

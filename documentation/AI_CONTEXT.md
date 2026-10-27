@@ -148,7 +148,7 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
         │       │   ├── jobs/                    # Scheduled jobs
         │       │   ├── links/                   # Module links
         │       │   ├── search/                  # Product search index definition
-        │       │   ├── subscribers/             # Event subscribers (order.placed -> HQ fulfillment + lineage)
+        │       │   ├── subscribers/             # product.created marketplace provisioning; order.placed -> HQ fulfillment + lineage
         │       │   └── workflows/               # Business logic workflows
         │       ├── README.md                    # Medusa default
         │       └── node_modules/                # Installed (1362 packages)
@@ -170,7 +170,7 @@ Seller identity is a Medusa Customer identity plus one Seller profile. Product o
 
 - Medusa owns `ProductCategory`, `ProductCollection`, `ProductOption`, and `ProductOptionValue`. Seed data uses native fashion categories (`Apparel`, `Outerwear`, `Footwear`) and the `Karan Johar Fall Drop` collection.
 - Seller, Listing, ProductLineage, and HQFulfillment are custom modules registered in `medusa-config.js`. Listing is the seller-to-product source of truth; Medusa `product` is not extended with marketplace ownership columns.
-- Seller onboarding creates a draft product with one inventory-managed unit, native category/collection/options, and SKU format `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`. It is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
+- The authenticated seller listing route resolves the active Seller profile from the customer session, then uses Medusa's `createProductsWorkflow` to create a draft product with native category/collection/options. The `product.created` subscriber provisions every product created through either the Seller API or native Admin UI: it assigns or repairs standardized variant SKUs, enables one-of-one inventory, and creates an idempotent linked `PENDING_APPROVAL` Listing. Seller metadata chooses the Listing seller; Admin-created products fall back to the `system` Seller and `CELEB-SYSTEM-GEN-[SHORT_UUID]` SKU pattern. The Seller route is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
 - Admin product creation derives the Handle from Title as lowercase words joined with hyphens. Hyphens are removed from the Title input and rejected by the Admin/Seller product middleware; generated handles are the only place this separator is introduced.
 - Product creation checks the normalized handle against Medusa products in the backend. If it already exists, the request is rewritten to the next available suffix (`handle-2`, `handle-3`, ...), and the Admin success toast displays the final handle returned by Medusa.
 - Product-creation middleware enforces one value per option type for Admin and Seller creation. Adding an existing Admin option such as Size, Colour, or Authenticity starts with no value selected; the admin must choose one. The form reduces any retained legacy selection to its latest value, and choosing another value replaces the prior choice. The option value field uses the neutral localized `Select` placeholder rather than Medusa's colour-specific `Red, Blue, Green` example. The startup patch updates the Dashboard package and Medusa's generated `.medusa` Admin asset, adds a new route-asset URL to avoid browser reuse of the prior bundle, and clears the disposable Vite dependency cache so `/app/entry.jsx` is rebuilt from the corrected code. Repeating an option title or submitting an option `values` array with more than one value returns `400`, preserving the one-physical-item, one-variant model.
@@ -216,6 +216,7 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Marketplace product schemas are not extended with seller ownership or listing lifecycle columns.
 - [x] **Implemented** — Marketplace variants use `manage_inventory = true`, `allow_backorder = false`, and one initial unit.
 - [x] **Implemented** — Marketplace SKUs follow `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`.
+- [x] **Implemented** — The `product.created` subscriber applies SKU, inventory, seller metadata, and `PENDING_APPROVAL` Listing defaults to Admin and Seller product creation. It is idempotent and logs provisioning failures without failing the originating product request.
 
 #### 4.4.3 Listing lifecycle and seller onboarding
 
@@ -667,6 +668,7 @@ IMPLEMENTED: GET /store/products, GET /store/products/:id (Medusa core)
 IMPLEMENTED: GET /store/sellers/:handle (public seller profile + listed products)
 IMPLEMENTED: GET/POST /store/seller/listings and POST /store/seller/products (seller listing CRUD)
 IMPLEMENTED: PATCH /store/seller/listings/:id (own listings only)
+IMPLEMENTED: product.created subscriber (SKU, one-unit inventory, seller fallback, and Listing provisioning for Seller/Admin product creation)
 IMPLEMENTED: GET /admin/listings, POST /admin/listings/:id/review (admin review)
 PLANNED:     POST/PATCH /store/products, auction start/bid
 ```

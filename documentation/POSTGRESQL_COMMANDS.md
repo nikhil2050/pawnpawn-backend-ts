@@ -63,14 +63,16 @@ psql -h localhost -U postgres -d pawnpawn_db -f sql/schema.sql
 SELECT t.typname AS enum_name, e.enumlabel AS enum_value
 FROM pg_type t
 JOIN pg_enum e ON e.enumtypid = t.oid
-WHERE t.typname IN ('seller_verification_status', 'product_listing_type')
+WHERE t.typname IN ('seller_verification_status')
 ORDER BY t.typname, e.enumsortorder;
 ```
 
-### Verify product.listing_type column
+<!-- These commands query Listing lifecycle data rather than deprecated product
+     marketplace columns. See AI_CONTEXT.md §4.2 and §5.6.3. -->
+### Verify Listing ownership fields
 ```sql
-\d product
--- Look for: listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'
+\d listing
+-- Look for: listing_status, listing_type, seller_id, product_id, admin_feedback
 ```
 
 ---
@@ -309,18 +311,18 @@ ORDER BY title;
 
 ### List all AUCTION products
 ```sql
-SELECT id, title, listing_type, metadata->>'seller_handle' AS seller_handle
-FROM product
-WHERE listing_type = 'AUCTION'
+SELECT l.id, l.product_id, p.title, l.listing_type, p.metadata->>'seller_handle' AS seller_handle
+FROM listing l JOIN product p ON p.id = l.product_id
+WHERE l.listing_type = 'AUCTION'
 ORDER BY title;
 ```
 
 ### Update a product's listing type
 ```sql
-UPDATE product
-SET listing_type = 'AUCTION'::product_listing_type,
+UPDATE listing
+SET listing_type = 'AUCTION',
     updated_at = NOW()
-WHERE id = 'prod_snoop_002';
+WHERE product_id = 'prod_snoop_002';
 ```
 
 ### Count products by listing type
@@ -563,4 +565,4 @@ If you're coming from Java/JDBC/Hibernate, here's a mapping:
 
 ---
 
-*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, Listing and HQ fulfillment tables, sample data (8 sellers / 5 buyers / 17 products / 13 listings / 35 inventory levels / 8 lineage rows).*
+*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, Listing and HQ fulfillment tables, sample data (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage rows).*

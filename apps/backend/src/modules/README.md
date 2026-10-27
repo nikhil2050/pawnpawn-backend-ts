@@ -1,6 +1,8 @@
-# Custom Module
+# PawnPawn Custom Modules
 
-PawnPawn marketplace modules and their ownership boundaries are documented in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record).
+PawnPawn registers four marketplace modules in `apps/backend/medusa-config.js`: `seller`, `listing`, `lineage`, and `hq_fulfillment`. Their ownership boundaries, module keys, backing tables, and verification command are documented in [AI_CONTEXT.md §6.1.1](../../../../documentation/AI_CONTEXT.md#custom-marketplace-module-registry-and-verification).
+
+> The generic Medusa example below is reference material only. This project uses an object-based `modules` configuration in `medusa-config.js`, not the example array-based configuration.
 
 A module is a package of reusable functionalities. It can be integrated into your Medusa application without affecting the overall system. You can create a module as part of a plugin.
 

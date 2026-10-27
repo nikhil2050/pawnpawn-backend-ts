@@ -18,12 +18,16 @@ Index for all project documentation. The backend is a Medusa v2.22.0 service in 
 
 ## Current Status (Oct 2026)
 
+<!-- Keep this snapshot aligned with the prompt-alignment migration and route
+     aliases so contributors know which local data and APIs are available. See
+     AI_CONTEXT.md §4.3 and §10. -->
+
 - Medusa core routes work: auth (`/auth/*`), store catalog (`GET /store/products`), store customers, admin core.
 - Custom modules work: `container.resolve("seller")`, `container.resolve("lineage")`, `container.resolve("listing")`, `container.resolve("hq_fulfillment")`.
 - Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
-- Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`).
+- Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`).
 - Custom storefront routes are **planned**: `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, purchase, lineage, and `/admin/lineage*`. See [`API.md`](./API.md#current-implementation-status).
-- Database and seed data are verified: 8 sellers, 5 buyers, 17 products (13 published marketplace products), 33 variants, 72 prices, 13 listings, 35 inventory items/levels, and 8 lineage records.
+- Database and seed data are verified: 8 sellers, 5 buyers, 17 products (13 published marketplace products), 33 variants, 72 prices, 13 listings, 13 unique marketplace inventory units, native fashion taxonomy/options, and 8 lineage records.
 
 ## Quick Start
 
@@ -33,6 +37,7 @@ cd apps/backend
 # Schema + sample data
 npm run db:import
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 
 # Verify custom modules
 ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts

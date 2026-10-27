@@ -8,13 +8,13 @@
 
 ---
 
-## 🎯 Project Overview
+## 1. 🎯 Project Overview
 
 **PawnPawn** is a peer-to-peer marketplace platform where users can buy and sell second-hand items. The backend is built on **Medusa v2** (Node.js/TypeScript) and serves two frontend applications:
 - **Buyer App** (`pawnpawn-frontend-buyer-ts`) - Next.js on `http://localhost:3000`
 - **Seller App** (`pawnpawn-frontend-seller-ts`) - Next.js on `http://localhost:3001`
 
-### Key Business Concepts
+### 1.1 Key Business Concepts
 | Concept | Description |
 |---------|-------------|
 | **Seller** | Marketplace vendor with verification status, Razorpay Connect account, trust level (`trusted`/`untrusted`), and category (`celebrity`, `influencer`, `musician`, `athlete`, `other`) |
@@ -26,9 +26,9 @@
 
 ---
 
-## 🏗️ Architecture
+## 2. 🏗️ Architecture
 
-### Tech Stack
+### 2.1 Tech Stack
 ```
 ├── Runtime: Node.js ≥ 22.22.0 required (current shell: v22.14.0; v24.15.0 available via nvm)
 ├── Framework: Medusa v2.22.0 (@medusajs/medusa)
@@ -39,7 +39,7 @@
 └── Monorepo: Turborepo (root: /PawnPawnTS)
 ```
 
-### 🍵 Java Developer Cheat Sheet — TypeScript & Medusa Concepts
+### 2.2 🍵 Java Developer Cheat Sheet — TypeScript & Medusa Concepts
 
 If you're coming from a Java/Spring Boot background, here's a quick mapping:
 
@@ -49,7 +49,7 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
 | `@Entity` + `@Table` | Medusa module model + MikroORM | Medusa manages entities internally |
 | `@Id @GeneratedValue` | `id TEXT PRIMARY KEY` (Medusa-generated) | Medusa generates text IDs, not UUIDs |
 | `@Column(unique = true)` | `VARCHAR UNIQUE` | SQL constraint |
-| `@Enumerated(EnumType.STRING)` | PostgreSQL `ENUM` type | `seller_verification_status`, `product_listing_type` |
+| `@Enumerated(EnumType.STRING)` | PostgreSQL `ENUM` type | `seller_verification_status` |
 | `@CreatedDate` / `@LastModifiedDate` | `created_at TIMESTAMPTZ DEFAULT NOW()` | Database-managed timestamps |
 | `System.getenv("KEY")` | `process.env.KEY` | Environment variables |
 | `application.properties` | `.env` / `medusa-config.js` | Configuration |
@@ -79,7 +79,7 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
 
 ---
 
-## 📁 Directory Structure
+## 3. 📁 Directory Structure
 
 ```
 /Users/nikhilkshirsagar/AdvancedComputing/NKProjects/PawnPawnTS/
@@ -102,8 +102,9 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
         │       ├── .env.example       # Environment template
         │       ├── package.json       # Scripts & dependencies
         │       ├── sql/
-        │       │   ├── schema.sql     # Custom DDL: seller, product_lineage, listing_type
-        │       │   └── sample-data.sql # Idempotent demo seed (sellers, listings, lineage)
+        │       │   ├── schema.sql     # Custom DDL: seller, lineage, listing and HQ fulfillment
+        │       │   ├── sample-data.sql # Idempotent demo seed (sellers, listings, lineage)
+        │       │   └── marketplace_prompt_alignment.sql # Prompt-alignment data migration
         │       ├── src/
         │       │   ├── modules/
         │       │   │   ├── seller/
@@ -130,6 +131,7 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
         │       │   │   ├── store/seller/onboard/route.ts          # POST /store/seller/onboard
         │       │   │   ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
         │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
+        │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
         │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
         │       │   │   ├── admin/custom/route.ts # Placeholder only
         │       │   │   ├── admin/seller/route.ts # GET/POST /admin/seller
@@ -152,17 +154,127 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
 
 ---
 
-## 🗄️ Database Schema
+## 4. 🗄️ Database Schema
 
-### Marketplace architecture summary
+### 4.1 Marketplace architecture summary
 
 Seller identity is a Medusa Customer identity plus one Seller profile. Product ownership is normalized in the Listing module (`seller_id` + `product_id`), while product metadata keeps seller display fields for compatibility. Listings move through `PENDING_APPROVAL → LISTED → SOLD` or `REJECTED`; seller edits resubmit a rejected listing. Mixed-seller carts are supported, so HQ fulfillment is per order line. Payout release occurs after delivery. See the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) for the full decision record and follow-up work.
 
-## Marketplace Architecture Decision Record
+### 4.2 Prompt-aligned implementation rules
+
+<!-- This section records the implementation constraints introduced by the
+     marketplace alignment work so future agents preserve the same boundaries.
+     It is the canonical reference for the changes described below. -->
+
+- Medusa owns `ProductCategory`, `ProductCollection`, `ProductOption`, and `ProductOptionValue`. Seed data uses native fashion categories (`Apparel`, `Outerwear`, `Footwear`) and the `Karan Johar Fall Drop` collection.
+- Seller, Listing, ProductLineage, and HQFulfillment are custom modules registered in `medusa-config.js`. Listing is the seller-to-product source of truth; Medusa `product` is not extended with marketplace ownership columns.
+- Seller onboarding creates a draft product with one inventory-managed unit, native category/collection/options, and SKU format `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`. It is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
+- Admin review accepts `APPROVE`, `EDIT_AND_APPROVE`, and `REJECT` (legacy `RETURN` remains accepted). Feedback is retained on the Listing and seller edits resubmit it to `PENDING_APPROVAL`.
+- Sold unique items retain product, SKU, Listing, lineage, and HQ records; inventory becomes zero. Mixed carts create one HQ row per order line and payout release is gated by `DELIVERED`.
+
+### 4.3 Current database alignment (local `pawnpawn_db`)
+
+Applied with `sql/marketplace_prompt_alignment.sql`:
+
+| Entity | Current data |
+|---|---:|
+| Sellers | 8 |
+| Products | 17 (13 marketplace products, 4 draft Medusa demos) |
+| Listings | 13, all currently `LISTED` |
+| Marketplace inventory | 13 unique variants, one stocked unit each |
+| Native fashion categories | Apparel, Outerwear, Footwear |
+| Native campaign collection | Karan Johar Fall Drop |
+| Native marketplace options | Size and Condition |
+
+The migration canonicalizes marketplace SKUs, attaches native option values, assigns the fall-drop collection to selected listings, and adds `listing.admin_feedback`. Existing celebrity fixture sellers without `customer_id` are catalog fixtures; production onboarding must create or link the Medusa Customer identity first.
+
+### 4.4 Feature implementation checklist
+
+Status values: **Implemented** = available in the repository and local database; **Partial** = core path exists but an adapter, UI, or production hardening remains; **Planned** = documented contract with no complete implementation.
+
+#### 4.4.1 Identity and seller profiles
+
+- [x] **Implemented** — Medusa Customer is the shared buyer/seller identity.
+- [x] **Implemented** — Seller profile stores handle, store name, avatar, verification, trust, category, social handle, biography, and Razorpay account reference.
+- [x] **Implemented** — Seller IDs are retained as opaque text/UUID-shaped strings and are never regenerated during updates.
+- [x] **Implemented** — Seller inactivation uses `is_deactivated`; seller rows and history are retained.
+- [ ] **Partial** — Existing celebrity fixture sellers need real `customer_id` links before they can authenticate through the seller portal.
+- [x] **Implemented** — Active seller authorization scopes seller listing reads and writes to the authenticated customer.
+
+#### 4.4.2 Native catalog and item modeling
+
+- [x] **Implemented** — Medusa Product remains the catalog and commerce primitive.
+- [x] **Implemented** — Native ProductCategory is used for Apparel, Outerwear, and Footwear.
+- [x] **Implemented** — Native ProductCollection is used for the Karan Johar Fall Drop campaign.
+- [x] **Implemented** — Native ProductOption/ProductOptionValue stores Size and Condition values.
+- [x] **Implemented** — Marketplace products carry seller display metadata for compatibility/search presentation.
+- [x] **Implemented** — Marketplace product schemas are not extended with seller ownership or listing lifecycle columns.
+- [x] **Implemented** — Marketplace variants use `manage_inventory = true`, `allow_backorder = false`, and one initial unit.
+- [x] **Implemented** — Marketplace SKUs follow `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`.
+
+#### 4.4.3 Listing lifecycle and seller onboarding
+
+- [x] **Implemented** — Listing module links one current seller to one Medusa product.
+- [x] **Implemented** — Seller can create a draft listing through `POST /store/seller/products` or the `/store/seller/listings` alias.
+- [x] **Implemented** — New listings start as `PENDING_APPROVAL` and remain hidden from the public catalog.
+- [x] **Implemented** — Seller can list and update only their own listings.
+- [x] **Implemented** — Rejected listings can be edited and resubmitted for review.
+- [x] **Implemented** — Listing status supports `PENDING_APPROVAL`, `LISTED`, `SOLD`, and `REJECTED`.
+- [x] **Implemented** — Listing type supports `FIXED_PRICE` and `AUCTION` at the module level.
+- [x] **Partial** — Auction bidding and auction settlement endpoints are not implemented.
+
+#### 4.4.4 Administrative review and inspection
+
+- [x] **Implemented** — Admin can approve a listing with `APPROVE`.
+- [x] **Implemented** — Admin can edit product data and approve with `EDIT_AND_APPROVE`.
+- [x] **Implemented** — Admin can reject/return a listing with feedback using `REJECT` or legacy `RETURN`.
+- [x] **Implemented** — Reviewer, review timestamp, rejection feedback, and admin feedback are stored.
+- [ ] **Partial** — A dedicated append-only review audit table/event log is still recommended for multiple decisions per listing.
+- [x] **Implemented** — Admin listing endpoints expose seller/listing relationships and lifecycle data.
+- [ ] **Partial** — A complete Admin UI for listing review, buyer/order details, and HQ state is still pending.
+
+#### 4.4.5 Buyer storefront and search
+
+- [x] **Implemented** — Public seller profiles return active seller information and listed inventory.
+- [x] **Partial** — Product visibility is controlled through Listing status in custom seller/profile routes; the core Medusa `/store/products` route still needs a Listing-aware filter middleware/serializer.
+- [x] **Implemented** — Native category, collection, and option values are present for storefront filtering/search indexing.
+- [ ] **Planned** — A dedicated `GET /store/products` marketplace serializer with explicit `LISTED` filtering and seller fields.
+- [ ] **Partial** — Seller profile route returns active listed inventory; a dedicated public sold-archive response is still pending.
+
+#### 4.4.6 Checkout, inventory, lineage, and resale
+
+- [x] **Implemented** — `order.placed` resolves listings per order line, supporting mixed-seller carts.
+- [x] **Implemented** — Purchased listings transition to `SOLD` and remain retained for audit/history.
+- [x] **Implemented** — Product lineage records seller, buyer, price, and transaction time.
+- [x] **Implemented** — Resale can change the current Listing seller while lineage preserves prior ownership.
+- [x] **Partial** — Inventory quantity is seeded and normalized to one; atomic reservation/decrement during payment capture needs production checkout workflow hardening.
+- [ ] **Planned** — Dedicated `POST /store/purchase` orchestration with payment capture and idempotency.
+- [ ] **Planned** — Dedicated product lineage REST endpoints for buyers and admins.
+
+#### 4.4.7 HQ fulfillment and payouts
+
+- [x] **Implemented** — HQ fulfillment is modeled per order line/listing, not per order.
+- [x] **Implemented** — HQ states progress through `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, and `DELIVERED`.
+- [x] **Implemented** — Admin HQ transition route validates and updates fulfillment records.
+- [x] **Partial** — Certificate URL storage exists; certificate generation and document storage adapters are not connected.
+- [x] **Partial** — Delivery-gated payout timestamp/state exists in HQ data; Razorpay Route release and idempotency adapter are not connected.
+- [ ] **Planned** — Returns, disputes, failed authentication, and payout reversal workflows.
+
+#### 4.4.8 Modules, routes, and operations
+
+- [x] **Implemented** — Seller, Listing, Lineage, and HQ Fulfillment custom modules are registered in `medusa-config.js`.
+- [x] **Implemented** — Seller, listing, admin review, seller profile, and HQ route handlers exist.
+- [x] **Implemented** — Idempotent SQL schema and prompt-alignment migration are available for local setup.
+- [x] **Implemented** — Sample sellers, products, listings, inventory, options, categories, collections, and lineage are populated locally.
+- [ ] **Partial** — Automated integration coverage for seller isolation, mixed carts, review audit, resale, delivery, and payout release remains to be added.
+- [ ] **Planned** — Production observability, webhook reconciliation, and background retry jobs for payment/HQ/payout adapters.
+
+<a id="marketplace-architecture-decision-record"></a>
+## 5. Marketplace Architecture Decision Record
 
 PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit unique memorabilia, admins review it, fans purchase it, and every sold item travels through PawnPawn HQ for authenticity checks, certificate generation, repackaging, and dispatch.
 
-### Decisions from architecture review
+### 5.1 Decisions from architecture review
 
 - A celebrity seller uses the same Medusa Customer identity as a buyer. A Customer can have at most one Seller profile and can still purchase as a fan.
 - A seller can own many products. The normalized relationship is `listing.seller_id -> listing.product_id`; product metadata fields `seller_id`, `seller_handle`, and `seller_name` are denormalized compatibility fields.
@@ -174,7 +286,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 - Seller payout is released after buyer delivery. Payment capture, payout, and dispute handling remain separate from listing approval.
 - Inactivation sets `seller.is_deactivated = true`; it never permanently deletes a seller.
 
-### Questions resolved during review
+### 5.2 Questions resolved during review
 
 | Question | Decision |
 |---|---|
@@ -185,7 +297,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 | When is payout released? | After buyer delivery, with a future Razorpay adapter and idempotency protection. |
 | Should inactivation delete seller records? | No. Set `is_deactivated` and retain the seller, listings, and history. |
 
-### Data ownership
+### 5.3 Data ownership
 
 | Concern | Source of truth |
 |---|---|
@@ -196,15 +308,15 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 | HQ receipt, authentication, dispatch | HQ Fulfillment module |
 | Buyer, order, payment, delivery | Medusa Customer/Order/Fulfillment modules |
 
-### Implemented backend surface
+### 5.4 Implemented backend surface
 
-- Seller: `POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`.
+- Seller: `POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`.
 - Public seller: `GET /store/sellers/:handle`.
 - Admin listings: `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`.
 - HQ operations: `POST /admin/hq-fulfillments/:id` with `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, or `MARK_DELIVERED`.
 - `order.placed` creates HQ records, marks matching listed items sold, and records lineage.
 
-### Known follow-up work
+### 5.5 Known follow-up work
 
 - Wire the separate buyer and seller Next.js applications to these APIs.
 - Add a dedicated Admin listings/product view with seller, buyer, listing state, and HQ state.
@@ -212,9 +324,9 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 - Add certificate generation/storage and delivery, return, and dispute workflows.
 - Add integration tests for seller authorization, mixed-seller carts, listing review, HQ transitions, and payout release.
 
-### Custom Tables (Defined in `sql/schema.sql`)
+### 5.6 Custom Tables (Defined in `sql/schema.sql`)
 
-#### 1. `seller` Table
+#### 5.6.1 `seller` Table
 ```sql
 CREATE TABLE seller (
     id TEXT PRIMARY KEY,
@@ -235,7 +347,7 @@ CREATE TABLE seller (
 ```
 **Indexes**: `handle`, `razorpay_account_id`, `verification_status`, `seller_trust`, `seller_category`, `customer_id` (unique, partial)
 
-#### 2. `product_lineage` Table
+#### 5.6.2 `product_lineage` Table
 ```sql
 CREATE TABLE product_lineage (
     id TEXT PRIMARY KEY,
@@ -253,7 +365,7 @@ CREATE TABLE product_lineage (
 
 > IDs are `TEXT`, not `UUID`, because Medusa generates text IDs. Treat them as opaque: service-created rows get ULID-like values, while seed rows may use `seller_*` / `lineage_*` or UUID-shaped text depending on when the DB was first seeded. `created_at`, `updated_at`, and `deleted_at` are required by Medusa's generated service queries.
 
-#### 3. `listing` Table
+#### 5.6.3 `listing` Table
 
 Marketplace listing lifecycle. Product data stays managed by Medusa; this table owns seller assignment, review state and marketplace-only attributes.
 
@@ -268,6 +380,7 @@ CREATE TABLE listing (
       CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
     item_condition TEXT,
     rejection_feedback TEXT,
+    admin_feedback TEXT,
     reviewed_by TEXT,
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -277,7 +390,7 @@ CREATE TABLE listing (
 CREATE INDEX IF NOT EXISTS idx_listing_seller_status ON listing(seller_id, listing_status);
 ```
 
-#### 4. `hq_fulfillment` Table
+#### 5.6.4 `hq_fulfillment` Table
 
 One HQ record per purchased order line so mixed-seller carts can progress independently through authentication, delivery and payout release.
 
@@ -301,24 +414,16 @@ CREATE TABLE hq_fulfillment (
 CREATE INDEX IF NOT EXISTS idx_hq_fulfillment_seller_status ON hq_fulfillment(seller_id, hq_status);
 ```
 
-#### 5. `product` Table Extension
-```sql
-ALTER TABLE product 
-ADD COLUMN listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE';
-```
-**Enum**: `product_listing_type` = `FIXED_PRICE` | `AUCTION`
-
-### Enums
+### 5.7 Enums
 | Enum Name | Values | Used By |
 |-----------|--------|---------|
 | `seller_verification_status` | `PENDING`, `VERIFIED` | `seller.verification_status` |
-| `product_listing_type` | `FIXED_PRICE`, `AUCTION` | `product.listing_type` |
 | `listing_status` | `PENDING_APPROVAL`, `LISTED`, `SOLD`, `REJECTED` | `listing.listing_status` |
 | `hq_status` | `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED` | `hq_fulfillment.hq_status` |
 
 > `seller.seller_trust`, `seller.seller_category`, and `listing.listing_type` are **VARCHAR with defaults**, not PostgreSQL enums, so new values can be added without a migration. Application-level values are documented in `SAMPLE_DATA.md`.
 
-### Helper Views
+### 5.8 Helper Views
 | View | Purpose |
 |------|---------|
 | `product_current_owner` | Latest owner of each product (from lineage) |
@@ -326,9 +431,9 @@ ADD COLUMN listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE';
 
 ---
 
-## ⚙️ Configuration
+## 6. ⚙️ Configuration
 
-### Configuration File: `medusa-config.js` (NOT `.ts`)
+### 6.1 Configuration File: `medusa-config.js` (NOT `.ts`)
 
 **Important**: Medusa CLI's ts-node has ESM/CJS interop issues with `defineConfig()` imports from `@medusajs/framework/utils`. The config uses plain `module.exports` with all core modules registered manually.
 
@@ -396,7 +501,28 @@ module.exports = {
 
 **Intentionally excluded modules:** `rbac` and `workflow-engine-inmemory` are not registered — enabling them causes license/shared-container failures in this setup. Registering modules as an array or with hyphenated keys also breaks loading; `modules` must be an object keyed by valid names (`api_key`, `seller`, `lineage`, `listing`, `hq_fulfillment`, ...).
 
-### Environment Variables (`.env`)
+<a id="custom-marketplace-module-registry-and-verification"></a>
+#### 6.1.1 Custom marketplace module registry and verification
+
+| Logical module | Module directory | `medusa-config.js` key | Container resolution key | Backing table | Status |
+|---|---|---|---|---|---|
+| SellerModule | `src/modules/seller` | `seller` | `seller` | `seller` | Registered and verified |
+| ListingModule | `src/modules/listing` | `listing` | `listing` | `listing` | Registered and verified |
+| LineageModule | `src/modules/lineage` | `lineage` | `lineage` | `product_lineage` | Registered and verified |
+| HQFulfillmentModule | `src/modules/hq-fulfillment` | `hq_fulfillment` | `hq_fulfillment` | `hq_fulfillment` | Registered and verified |
+
+`FulfillmentHQ` in marketplace terminology maps to `HQFulfillmentModule` in code. The `hq_fulfillment` key uses underscores because it is a Medusa dependency-injection name; the filesystem directory uses `hq-fulfillment`.
+
+Run the verification after schema import and seed setup:
+
+```bash
+cd apps/backend
+../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
+```
+
+The script resolves all four module keys and reads Listing/HQ rows through generated Medusa service methods. It also runs the existing temporary Seller and Lineage CRUD checks, then removes those temporary records.
+
+### 6.2 Environment Variables (`.env`)
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/pawnpawn_db
 STORE_CORS=http://localhost:3000,http://localhost:3001
@@ -407,7 +533,7 @@ COOKIE_SECRET=supersecret
 NODE_ENV=development
 ```
 
-### CORS Strategy
+### 6.3 CORS Strategy
 | Origin | Purpose | Credentials |
 |--------|---------|-------------|
 | `http://localhost:3000` | Buyer App | ✅ Yes |
@@ -415,7 +541,7 @@ NODE_ENV=development
 | `http://localhost:9000` | Medusa Admin | ✅ Yes |
 | `http://localhost:5173` | Vite dev (admin) | ✅ Yes |
 
-### Local Runtime Details (verified)
+### 6.4 Local Runtime Details (verified)
 
 | Item | Value |
 |------|-------|
@@ -445,7 +571,7 @@ lsof -ti:9000 | xargs kill -9              # if port is stuck
 
 ---
 
-## 📦 Package Scripts
+## 7. 📦 Package Scripts
 
 From `apps/backend/`:
 
@@ -472,7 +598,7 @@ psql -h localhost -U postgres -d pawnpawn_db -f sql/sample-data.sql
 ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
 ```
 
-### Database Commands (via Medusa CLI)
+### 7.1 Database Commands (via Medusa CLI)
 Run from `apps/backend/` directory:
 
 ```bash
@@ -499,11 +625,11 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-da
 
 ---
 
-## 🔄 Core Workflows
+## 8. 🔄 Core Workflows
 
 > **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`), admin listing review, HQ fulfillment transitions, seller onboarding, seller listings, and the **Sellers** admin page are implemented. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
 
-### 1. Admin Login (Implemented)
+### 8.1 Admin Login (Implemented)
 ```
 POST /auth/user/emailpass
   → Body: { email: "admin@pawnpawn.com", password: "supersecret" }
@@ -511,14 +637,14 @@ POST /auth/user/emailpass
   → Use: Authorization: Bearer <token>
 ```
 
-### 2. Buyer Registration & Login (Implemented)
+### 8.2 Buyer Registration & Login (Implemented)
 ```
 POST /auth/customer/emailpass/register  → auth identity + token
 POST /store/customers                   → customer profile (needs publishable key)
 POST /auth/customer/emailpass           → login, returns token
 ```
 
-### 3. Seller Onboarding (Implemented)
+### 8.3 Seller Onboarding (Implemented)
 ```
 IMPLEMENTED: POST /store/seller/onboard
   → Requires authenticated customer (Bearer/session)
@@ -530,17 +656,17 @@ IMPLEMENTED: POST /store/seller/onboard
 CURRENT: sellerService.createSellers({ handle, store_name, razorpay_account_id, ... })
 ```
 
-### 4. Product Listing (Implemented via seller listings)
+### 8.4 Product Listing (Implemented via seller listings)
 ```
 IMPLEMENTED: GET /store/products, GET /store/products/:id (Medusa core)
 IMPLEMENTED: GET /store/sellers/:handle (public seller profile + listed products)
-IMPLEMENTED: GET/POST /store/seller/listings (seller listing CRUD)
+IMPLEMENTED: GET/POST /store/seller/listings and POST /store/seller/products (seller listing CRUD)
 IMPLEMENTED: PATCH /store/seller/listings/:id (own listings only)
 IMPLEMENTED: GET /admin/listings, POST /admin/listings/:id/review (admin review)
 PLANNED:     POST/PATCH /store/products, auction start/bid
 ```
 
-### 5. Purchase Flow (Planned REST; subscriber handles orders)
+### 8.5 Purchase Flow (Planned REST; subscriber handles orders)
 ```
 PLANNED: POST /store/purchase
   → would create order + product_lineage entry
@@ -550,7 +676,7 @@ CURRENT: order.placed subscriber (src/subscribers/order-placed-hq-fulfillment.ts
 CURRENT: lineageService.recordTransfer({ product_id, seller_id?, buyer_id, price })
 ```
 
-### 6. Lineage Query (Planned REST — module/SQL works)
+### 8.6 Lineage Query (Planned REST — module/SQL works)
 ```
 PLANNED: GET /store/products/:id/lineage
 
@@ -558,7 +684,7 @@ CURRENT: lineageService.getLineageHistory(productId)
          lineageService.getCurrentOwner(productId)
 ```
 
-### 7. Admin Seller Listing (Implemented)
+### 8.7 Admin Seller Listing (Implemented)
 
 ```
 IMPLEMENTED: GET /admin/seller           → list/filter sellers (Bearer admin token)
@@ -579,9 +705,9 @@ PLANNED: /admin/lineage*
 
 ---
 
-## 🔐 Authentication
+## 9. 🔐 Authentication
 
-### Admin Login (Working)
+### 9.1 Admin Login (Working)
 ```bash
 curl -X POST http://localhost:9000/auth/user/emailpass \
   -H "Content-Type: application/json" \
@@ -593,7 +719,7 @@ Returns a JWT token. Use it with:
 Authorization: Bearer <jwt_token>
 ```
 
-### Admin Credentials
+### 9.2 Admin Credentials
 | Field | Value |
 |-------|-------|
 | Email | `admin@pawnpawn.com` |
@@ -601,20 +727,20 @@ Authorization: Bearer <jwt_token>
 
 > **Note**: Admin user already exists in DB (seeded during migration). Password was updated via direct SQL update to `provider_identity.provider_metadata.password`.
 
-### Store API Authentication
+### 9.3 Store API Authentication
 - Header: `x-publishable-api-key: <token>` (get from `api_key` table)
 - Or: `Authorization: Bearer <jwt_token>`
 
-### Sample Buyer Credentials
+### 9.4 Sample Buyer Credentials
 All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 
 ---
 
-## 📡 API Endpoints
+## 10. 📡 API Endpoints
 
 **Status legend:** `Implemented` = route exists and was exercised; `Planned` = contract only, no route file.
 
-### Auth
+### 10.1 Auth
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | POST | `/auth/user/emailpass` | No | Admin login | Implemented |
@@ -623,26 +749,26 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | POST | `/auth/customer/emailpass` | No | Buyer login | Implemented |
 | POST | `/auth/customer/emailpass/register` | No | Buyer registration | Implemented |
 
-### Seller
+### 10.2 Seller
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard authenticated customer as seller | Implemented |
 | GET | `/store/sellers/:handle` | No | Public seller profile + listed products | Implemented |
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | Authenticated seller's listings | Implemented |
-| POST | `/store/seller/listings` | Bearer/Cookie (customer) | Create a listing (draft product + Listing) | Implemented |
+| POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing) | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update own listing | Implemented |
 | GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | Planned |
 | PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | Planned |
 
-### Listings & HQ Fulfillment
+### 10.3 Listings & HQ Fulfillment
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | GET | `/admin/listings` | Bearer | List all listings (with seller/product) | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | Implemented |
 
-### Products
+### 10.4 Products
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | GET | `/store/products` | Publishable key | List products | Implemented (core) |
@@ -652,13 +778,13 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | POST | `/store/products/:id/auction/start` | Bearer/Cookie | Start auction | Planned |
 | POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | Planned |
 
-### Purchase/Lineage
+### 10.5 Purchase/Lineage
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | POST | `/store/purchase` | Bearer/Cookie | Purchase product | Planned |
 | GET | `/store/products/:id/lineage` | No | Ownership history | Planned |
 
-### Custom Module Admin REST
+### 10.6 Custom Module Admin REST
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
 | GET | `/admin/seller` | Bearer | List/filter sellers | Implemented |
@@ -667,17 +793,17 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | Implemented |
 | GET | `/admin/listings` | Bearer | List all listings | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve/return a listing | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + fulfillments for a seller | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance HQ fulfillment | Implemented |
 | GET/POST | `/admin/lineage`, `/admin/lineage/:id` | Bearer | Lineage CRUD | Planned |
 
-### Admin UI
+### 10.7 Admin UI
 | Route | Description | Status |
 |-------|-------------|--------|
 | `/app/sellers` | Sellers list page (store, handle, category, trust, verification, bio, social, customer link) | Implemented |
 
-### Custom Module Service Access (Implemented)
+### 10.8 Custom Module Service Access (Implemented)
 
 ```ts
 const sellerService = container.resolve("seller")     // not "sellerModuleService"
@@ -698,7 +824,7 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-## 🧪 Testing Strategy
+## 11. 🧪 Testing Strategy
 
 - **Unit tests**: `src/**/__tests__/**/*.unit.spec.ts` → `npm run test:unit`
 - **Module integration**: `src/modules/*/__tests__/**` → `npm run test:integration:modules`
@@ -706,7 +832,7 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-## 🚀 Quick Start Checklist
+## 12. 🚀 Quick Start Checklist
 
 1. Start PostgreSQL: `pg_isready -h localhost -p 5432`
 2. Create DB: `createdb -h localhost -U postgres pawnpawn_db`
@@ -727,7 +853,7 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-## 📚 References
+## 13. 📚 References
 
 - [Medusa v2 Documentation](https://docs.medusajs.com)
 - [Medusa Framework API](https://docs.medusajs.com/resources/framework)
@@ -738,4 +864,4 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 35 inventory items / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*
+*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*

@@ -17,7 +17,7 @@ This guide walks you through the complete local development cycle:
 2. Start PostgreSQL and create the database
 3. Configure environment variables
 4. Run Medusa migrations (built-in tables)
-5. Import custom schema (seller, product_lineage, listing_type)
+5. Import custom schema (seller, product_lineage, listing, hq_fulfillment)
 6. Verify admin login (admin@pawnpawn.com / supersecret)
 7. Start the dev server
 8. Test API endpoints with curl
@@ -138,7 +138,7 @@ You should see tables like: `product`, `cart`, `order`, `customer`, `address`, `
 
 ## Step 4: Import Custom Schema
 
-Your custom tables (`seller`, `product_lineage`) and the `product.listing_type` extension are defined in `sql/schema.sql`.
+Your custom tables (`seller`, `product_lineage`, `listing`, `hq_fulfillment`) are defined in `sql/schema.sql`; Medusa's native `product` schema is not extended.
 
 ```bash
 cd apps/backend
@@ -155,13 +155,15 @@ This executes `scripts/import-sql.ts` which reads `sql/schema.sql` and runs each
 psql -h localhost -U postgres -d pawnpawn_db -c "\dt seller product_lineage"
 ```
 
-### Verify product.listing_type column
+<!-- Verify the custom Listing table after Medusa's native migrations run;
+     see AI_CONTEXT.md §6.4 and §12. -->
+### Verify Listing ownership fields
 
 ```bash
-psql -h localhost -U postgres -d pawnpawn_db -c "\d product"
+psql -h localhost -U postgres -d pawnpawn_db -c "\d listing"
 ```
 
-Look for: `listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'`
+Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admin_feedback`.
 
 ### Load sample data (optional)
 
@@ -267,7 +269,7 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, and the Medusa Admin **Sellers** page at `/app/sellers`.  
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, and the Medusa Admin **Sellers** page at `/app/sellers`.
 > **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 ### Test Seller Module (Working Today)
@@ -502,7 +504,7 @@ Run all commands from `apps/backend/` directory.
 |---------|-------|-----|
 | `Connection refused` on port 5432 | PostgreSQL not running | `brew services start postgresql@15` |
 | `database "pawnpawn_db" does not exist` | DB not created | `createdb -h localhost -U postgres pawnpawn_db` |
-| `listing_type column not found` | Migrations not run yet | Run `../../node_modules/.bin/medusa db:migrate` first, then `npm run db:import` |
+| `listing table not found` | Custom schema not imported | Run `npm run db:import` after `medusa db:migrate` |
 | `CORS error` from frontend | Missing origin in CORS config | Add `http://localhost:3000` to `STORE_CORS` in `.env` |
 | `401 Unauthorized` on a protected endpoint | Not authenticated | Login first to get JWT token/cookie |
 | `EADDRINUSE: port 9000` | Another Medusa dev server is running | `pkill -f "medusa develop"`; if needed `lsof -ti:9000 \| xargs kill -9` |
@@ -564,7 +566,7 @@ apps/backend/
 ├── .env.example              # Environment template
 ├── package.json              # Scripts: dev, start, build, db:import
 ├── sql/
-│   ├── schema.sql            # Custom DDL: seller, product_lineage, listing_type, listing, hq_fulfillment
+│   ├── schema.sql            # Custom DDL: seller, product_lineage, listing, hq_fulfillment
 │   └── sample-data.sql       # Idempotent demo seed
 ├── src/
 │   ├── modules/
@@ -596,6 +598,7 @@ apps/backend/
 │       ├── store/seller/onboard/route.ts          # POST /store/seller/onboard
 │       ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
 │       ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
+│       ├── store/seller/products/route.ts         # POST /store/seller/products alias
 │       ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
 │       ├── admin/custom/route.ts # Placeholder
 │       ├── admin/seller/route.ts # GET/POST /admin/seller

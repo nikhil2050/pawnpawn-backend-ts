@@ -3,7 +3,7 @@
 -- ============================================================================
 -- 
 -- This file contains raw SQL Data Definition Language (DDL) statements that
--- create PawnPawn-specific tables and extend Medusa's built-in tables.
+-- create PawnPawn-specific tables alongside Medusa's built-in tables.
 -- 
 -- JAVA DEVELOPER NOTES:
 --   - This is NOT a Java/JPA entity. No @Entity, @Table, @Id annotations.
@@ -29,13 +29,6 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Seller verification status enum
 DO $$ BEGIN
     CREATE TYPE seller_verification_status AS ENUM ('PENDING', 'VERIFIED');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
-
--- Product listing type enum
-DO $$ BEGIN
-    CREATE TYPE product_listing_type AS ENUM ('FIXED_PRICE', 'AUCTION');
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
@@ -237,6 +230,9 @@ CREATE INDEX IF NOT EXISTS idx_product_lineage_transacted ON product_lineage(tra
 -- Marketplace listing lifecycle. Product data stays managed by Medusa; this
 -- table owns seller assignment, review state and marketplace-only attributes.
 CREATE TABLE IF NOT EXISTS listing (
+    -- Listing owns seller assignment, review state, and marketplace lifecycle;
+    -- Medusa's product table remains unchanged.
+    -- See documentation/AI_CONTEXT.md §4.2 and §5.6.3.
     id TEXT PRIMARY KEY,
     seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
     product_id TEXT NOT NULL UNIQUE REFERENCES product(id) ON DELETE RESTRICT,
@@ -246,6 +242,7 @@ CREATE TABLE IF NOT EXISTS listing (
       CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
     item_condition TEXT,
     rejection_feedback TEXT,
+    admin_feedback TEXT,
     reviewed_by TEXT,
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -321,42 +318,6 @@ DO $$ BEGIN
             ADD CONSTRAINT product_lineage_seller_id_fkey
             FOREIGN KEY (seller_id) REFERENCES seller(id);
     END IF;
-END $$;
-
--- ============================================================================
--- PRODUCT TABLE EXTENSION
--- ============================================================================
--- Add listing_type column to Medusa's built-in 'product' table.
--- 
--- JAVA DEVELOPER NOTES:
---   - Medusa already has a 'product' table (managed by its internal ORM).
---   - We ALTER TABLE to add our custom column, similar to:
---     ALTER TABLE product ADD COLUMN listing_type VARCHAR(20) DEFAULT 'FIXED_PRICE'
---   - In a JPA/Hibernate project, you'd add a field to the Product entity:
---     @Enumerated(EnumType.STRING)
---     @Column(default = "FIXED_PRICE")
---     private ListingType listingType = ListingType.FIXED_PRICE;
---   - The DO $$ block checks if the table exists before altering (idempotent)
---   - If Medusa migrations haven't run yet, the product table won't exist,
---     so we catch undefined_table gracefully
-DO $$ BEGIN
-    ALTER TABLE product 
-    ADD COLUMN IF NOT EXISTS listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE';
-EXCEPTION
-    WHEN undefined_table THEN
-        -- Table doesn't exist yet (Medusa migrations not run).
-        -- The column will be added after migrations complete.
-        RAISE NOTICE 'Product table does not exist yet. listing_type column will be added by Medusa migrations.';
-    WHEN duplicate_column THEN NULL;
-END $$;
-
--- Index on listing_type for filtering products by type (FIXED_PRICE vs AUCTION)
--- Java: CREATE INDEX on listing_type column for fast queries
-DO $$ BEGIN
-    CREATE INDEX IF NOT EXISTS idx_product_listing_type ON product(listing_type);
-EXCEPTION
-    WHEN undefined_table THEN
-        RAISE NOTICE 'Product table does not exist yet. Index will be created after migrations.';
 END $$;
 
 -- ============================================================================

@@ -72,14 +72,17 @@ UPDATE seller
 
 -- ---------------------------------------------------------------------------
 -- 2. Variants, prices, sales-channel links and seller metadata
+-- Listing type is stored in the custom Listing module; this seed deliberately
+-- does not add marketplace columns to Medusa's native product table.
+-- See documentation/AI_CONTEXT.md §4.2 and §5.3.
 -- ---------------------------------------------------------------------------
 
 -- One resale listing from the buyer-turned-seller
-INSERT INTO product (id, title, handle, description, status, listing_type, created_at, updated_at)
+INSERT INTO product (id, title, handle, description, status, created_at, updated_at)
 VALUES
   ('prod_sarah_001', 'Snoop Dogg Signed Doggystyle Vinyl', 'snoop-dogg-signed-doggystyle-vinyl',
    'Original Doggystyle vinyl signed by Snoop Dogg. Purchased from Snoop Dogg''s official PawnPawn store and resold from a private collection.',
-   'published', 'FIXED_PRICE', NOW(), NOW())
+   'published', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 DO $$
@@ -280,7 +283,7 @@ SELECT
   (p.metadata->>'seller_id')::text,
   p.id,
   'LISTED',
-  COALESCE(p.listing_type, 'FIXED_PRICE'),
+  COALESCE((SELECT l2.listing_type FROM listing l2 WHERE l2.product_id = p.id), 'FIXED_PRICE'),
   p.metadata->>'condition',
   NOW(), NOW()
 FROM product p

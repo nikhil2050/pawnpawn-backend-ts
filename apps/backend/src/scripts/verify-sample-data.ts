@@ -1,13 +1,25 @@
 import { ExecArgs } from "@medusajs/framework/types"
 
 /**
- * Verifies the custom seller and lineage modules against the seeded sample data.
+ * Verifies all registered custom marketplace modules against the seeded sample
+ * data. Resolving every DI key proves that Medusa loaded the modules declared
+ * in medusa-config.js. See documentation/AI_CONTEXT.md §6.1.1.
  * Run from apps/backend:
  *   ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
  */
 export default async function verifySampleData({ container }: ExecArgs) {
   const seller = container.resolve<any>("seller")
   const lineage = container.resolve<any>("lineage")
+  const listing = container.resolve<any>("listing")
+  const hqFulfillment = container.resolve<any>("hq_fulfillment")
+
+  const [listings, hqFulfillments] = await Promise.all([
+    listing.listListings({}),
+    hqFulfillment.listHqFulfillments({}),
+  ])
+  console.log(
+    `[modules] seller,lineage,listing,hq_fulfillment resolved; listings=${listings.length} hqFulfillments=${hqFulfillments.length}`
+  )
 
   // Read seeded data through the generated service methods
   const all = await seller.listSellers({})

@@ -152,15 +152,20 @@ module.exports = {
         ],
       },
     },
-    // Custom PawnPawn Seller module
+    // Custom PawnPawn modules. These object keys are the dependency-injection
+    // names used by routes, workflows, subscribers, and verification scripts.
+    // See documentation/AI_CONTEXT.md §6.1.1.
     seller: {
       resolve: './src/modules/seller',
     },
-    // Custom PawnPawn Product Lineage module
     lineage: {
       resolve: './src/modules/lineage',
     },
-    listing: { resolve: './src/modules/listing' },
-    hq_fulfillment: { resolve: './src/modules/hq-fulfillment' },
+    listing: {
+      resolve: './src/modules/listing',
+    },
+    hq_fulfillment: {
+      resolve: './src/modules/hq-fulfillment',
+    },
   },
 }

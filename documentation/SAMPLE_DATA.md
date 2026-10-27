@@ -1,16 +1,20 @@
 # Sample Data
 
-The canonical seed represents the celebrity-to-fan marketplace described in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record): 8 sellers, 13 seller-mapped published products/listings, 35 inventory items and levels, 5 buyers, and 8 lineage records. Four upstream Medusa demo products remain as `draft` records without a marketplace seller.
+The canonical seed represents the celebrity-to-fan marketplace described in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record): 8 sellers, 13 seller-mapped published products/listings, 13 unique marketplace inventory units, 5 buyers, and 8 lineage records. Four upstream Medusa demo products remain as `draft` records without a marketplace seller. Native categories, collections, and options are loaded by `marketplace_prompt_alignment.sql`.
 
-Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, marketplace `Listing` rows, inventory records, and provenance/lineage history.
+Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, native Medusa catalog taxonomy/options, canonical celebrity SKUs, inventory records, and provenance/lineage history.
 
-> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`). `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` still have no custom REST routes — use the module services (`container.resolve("seller")`, `container.resolve("lineage")`, `container.resolve("listing")`, `container.resolve("hq_fulfillment")`) or SQL. See `API.md` → Current Implementation Status.
+> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`). `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` still have no custom REST routes — use the module services or SQL. See `API.md` → Current Implementation Status.
 
+<!-- The seed description documents why native Medusa taxonomy and canonical
+     celebrity SKUs are loaded alongside the custom marketplace records. See
+     AI_CONTEXT.md §4.2 and §4.3. -->
 ## Seed
 
 ```bash
 cd apps/backend
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 ```
 
 The script is idempotent — safe to run multiple times.

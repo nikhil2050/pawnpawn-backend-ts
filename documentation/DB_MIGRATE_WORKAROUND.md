@@ -60,7 +60,7 @@ psql -h localhost -U postgres -d pawnpawn_db -c "\dt"
 
 You should see Medusa tables: `product`, `cart`, `order`, `customer`, `address`, `user`, `api_key`, etc.
 
-### Step 3: Import your custom schema (seller, product_lineage, listing_type, listing, hq_fulfillment)
+### Step 3: Import your custom schema (seller, product_lineage, listing, hq_fulfillment)
 
 ```bash
 npm run db:import
@@ -90,13 +90,16 @@ Expected: `id | text | not null` and `seller_id | text`.
 
 > If `db:import` fails with `cannot alter type of a column used by a view`, re-run it — the view-drop block runs first. If a manual alteration was interrupted, drop both views, re-run, then confirm they were recreated with `\dv`.
 
-### Step 4: Verify product.listing_type column exists
+<!-- Listing fields are checked here because marketplace ownership now lives in
+     the custom Listing module instead of Medusa's product table. See
+     AI_CONTEXT.md §4.2 and §5.6.3. -->
+### Step 4: Verify Listing ownership fields
 
 ```bash
-psql -h localhost -U postgres -d pawnpawn_db -c "\d product"
+psql -h localhost -U postgres -d pawnpawn_db -c "\d listing"
 ```
 
-Look for: `listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'`
+Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admin_feedback`.
 
 ### Step 5: Seed sample data (optional but recommended)
 
@@ -244,7 +247,7 @@ Without `defineConfig`, these default modules are NOT registered automatically, 
 - [ ] `medusa-config.js` exists with `require('dotenv')` and plain `module.exports`
 - [ ] No `medusa-config.ts` exists (a stale `.ts` config breaks `medusa build`)
 - [ ] `.env` exists with correct `DATABASE_URL`
-- [ ] `npm run db:import` completed (custom schema: seller, product_lineage, listing_type, listing, hq_fulfillment)
+- [ ] `npm run db:import` completed (custom schema: seller, product_lineage, listing, hq_fulfillment)
 - [ ] Optional: sample data seeded (`psql ... -f sql/sample-data.sql`)
 - [ ] Optional: `medusa exec ./src/scripts/verify-sample-data.ts` passes
 - [ ] `../../node_modules/.bin/medusa db:migrate` ran (schema created; migration scripts error is expected and non-fatal)

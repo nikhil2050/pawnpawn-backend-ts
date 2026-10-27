@@ -63,6 +63,10 @@ If you're coming from Java/Spring Boot, here's how to read this API documentatio
 
 ### Current Implementation Status
 
+<!-- Status entries below distinguish implemented routes from documented future
+     contracts, including the new seller product onboarding alias. See
+     AI_CONTEXT.md §5.4 and §10. -->
+
 This section is authoritative. Anything marked **Planned** is a documented contract only — no route file exists under `src/api/` yet.
 
 | Area | Route / capability | Status |
@@ -78,9 +82,9 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | HQ Fulfillment module | `HqFulfillmentModuleService` | Implemented (service only) |
 | Seller onboarding | `POST /store/seller/onboard` | Implemented |
 | Seller profile | `GET /store/sellers/:handle` | Implemented |
-| Seller listings | `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id` | Implemented |
+| Seller listings | `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id` | Implemented |
 | Seller field updates | `PATCH /store/seller/me` | **Planned** |
-| Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** |
+| Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** (use `/store/seller/products`) |
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
 | Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | **Planned** |
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
@@ -211,7 +215,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), and the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/{id}`). `POST/PATCH /store/products`, auction, purchase, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), and the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/{id}`). `POST/PATCH /store/products`, auction, purchase, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 ```yaml
 openapi: 3.0.3
@@ -320,7 +324,7 @@ components:
           type: string
           enum: [FIXED_PRICE, AUCTION]
           default: FIXED_PRICE
-          description: Stored in the custom `product.listing_type` column; not returned by the core store API yet
+          description: Stored on the custom Listing module; not a native Medusa product column
         price:
           type: number
           format: decimal
@@ -1275,7 +1279,7 @@ paths:
 | POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard the authenticated customer as a seller | `201 Created` | Implemented |
 | GET | `/store/sellers/:handle` | No | Public seller profile + listed products | `200 OK` | Implemented |
 | GET | `/store/seller/listings` | Bearer/Cookie (customer) | List the authenticated seller's listings | `200 OK` | Implemented |
-| POST | `/store/seller/listings` | Bearer/Cookie (customer) | Create a listing (draft product + Listing row) | `201 Created` | Implemented |
+| POST | `/store/seller/listings` / `/store/seller/products` | Bearer/Cookie (customer) | Create a listing (draft product + Listing row) | `201 Created` | Implemented |
 | PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update the authenticated seller's own listing | `200 OK` | Implemented |
 | GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | `200 OK` | Planned |
 | PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | `200 OK` | Planned |
@@ -1285,7 +1289,7 @@ paths:
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | GET | `/admin/listings` | Bearer | List all listings (with seller/product joins) | `200 OK` | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
 
 ### HQ Fulfillment APIs
@@ -1324,7 +1328,7 @@ paths:
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | `200 OK` | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | `200 OK` | Implemented |
 | GET | `/admin/listings` | Bearer | List all listings (with seller/product) | `200 OK` | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | `200 OK` | Implemented |
 | GET | `/admin/lineage` | Bearer | List all lineage entries | `200 OK` | Planned |
@@ -1368,7 +1372,7 @@ const lineageService = container.resolve("lineage")
 
 | Method | Description |
 |--------|-------------|
-| `reviewListing(id, status, userId, feedback?)` | Set `listing_status` to `LISTED` or `REJECTED`, record reviewer + feedback |
+| `reviewListing(id, status, userId, feedback?)` | Set `listing_status` to `LISTED` or `REJECTED`, record reviewer, rejection feedback, and admin feedback |
 
 **HqFulfillmentModuleService**: no custom methods beyond generated CRUD (`listHqFulfillments`, `retrieveHqFulfillment`, `createHqFulfillments`, `updateHqFulfillments`, `deleteHqFulfillments`).
 
@@ -1449,7 +1453,7 @@ Content-Type: application/json
 
 ### 6.3 Create a Listing (Implemented)
 
-> **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/listings` (requires an authenticated, onboarded seller). The route creates a draft Medusa product with a single inventory-managed variant and a `Listing` row in `PENDING_APPROVAL`. Direct `POST /store/products` is **Planned**; use the seller listing route until then.
+> **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/products` (the existing `/store/seller/listings` route is an alias). The route creates a draft Medusa product with native category/collection/options, one inventory-managed variant with a canonical celebrity SKU, and a `Listing` row in `PENDING_APPROVAL`. Direct `POST /store/products` is **Planned**.
 
 **Request:**
 ```http
@@ -1697,7 +1701,7 @@ Authorization: Bearer <admin_token>
 
 ### 6.8 Review a Listing (Working Today)
 
-> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` approves (publishes the product) or returns a listing with feedback.
+> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` accepts `APPROVE`, `EDIT_AND_APPROVE`, or `REJECT` (legacy `RETURN` is also accepted), publishes approved products, and retains review feedback.
 
 ```http
 POST /admin/listings/listing_01M.../review
@@ -1715,7 +1719,7 @@ Authorization: Bearer <admin_token>
 Content-Type: application/json
 
 {
-  "action": "RETURN",
+  "action": "REJECT",
   "feedback": "Missing certificate of authenticity"
 }
 ```

@@ -1,5 +1,17 @@
 # AGENTS.md
 
+## PawnPawn Marketplace Instructions
+
+You are an expert full-stack engineer implementing marketplace core features and custom modules in `pawnpawn-backend-ts` using Medusa v2, PostgreSQL, and TypeScript.
+
+### Core Architectural Rules and Conventions
+
+1. **Native Medusa models:** Use Medusa's built-in `ProductCategory`, `ProductCollection`, and `ProductOption` / `ProductOptionValue`.
+2. **Unified accounts:** Sellers and buyers share the Medusa `Customer` table identity. A `Seller` links one-to-one through `customer_id`.
+3. **Dedicated custom modules:** Use the custom `seller`, `listing`, `lineage`, and `hq_fulfillment` modules through Medusa v2 utilities. Do not alter Medusa core product tables.
+4. **Universal product provisioning:** The `product.created` subscriber handles products created through the Admin UI or Seller API. It ensures a standardized SKU (`CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`), one-of-one inventory (`manage_inventory = true`, `inventory_quantity = 1`), and an initial `PENDING_APPROVAL` listing.
+5. **Strict commit convention:** Every commit, code description, and pull request summary must use `<type>(<scope>): <description>`. Allowed types are `feat`, `fix`, `refactor`, `perf`, `docs`, and `chore`. Allowed scopes are `products`, `seller`, `listing`, `lineage`, `hq`, `cart`, `auth`, `admin`, `db`, and `config`.
+
 ## Overview
 
 Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backend (`@medusajs/medusa` 2.x, Node 22.22+, PostgreSQL 15+) and an optional Next.js storefront.

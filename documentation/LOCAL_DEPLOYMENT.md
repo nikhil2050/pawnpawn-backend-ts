@@ -585,11 +585,29 @@ Before considering your local setup complete, verify:
 - [ ] `GET /store/sellers/:handle` returns a public seller profile + products
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
 - [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
+- [ ] `POST /admin/hq-fulfillments/:id/exception` supports split dispatch and seller cancellation/refund
+- [ ] Admin UI provides the HQ exception screen and completes the UI-only test flow below
 - [ ] `POST /admin/listings/:id/review` approves to `AVAILABLE`, edit-and-approves, or rejects with feedback
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
 > Remaining custom routes (`PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Seller onboarding, seller listings, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
+
+### UI-only HQ exception test (pending Admin screen)
+
+Use this checklist after the Seller UI and Admin HQ exception screen are available. It is the functional acceptance test for `POST /admin/hq-fulfillments/:id/exception` without using curl or direct API tools:
+
+1. Log in to the Seller UI and create a one-of-one product.
+2. Log in to Admin UI and approve the product Listing.
+3. Complete a buyer checkout for the approved item.
+4. Open the Admin HQ fulfillment dashboard and locate the order line.
+5. Select **Split Dispatch** for a ready line and choose **Authenticated & Packed** or **Dispatched**.
+6. Confirm that another line in a mixed cart remains in its own previous HQ state.
+7. For a delinquent line, select **Cancel & Refund**, enter a refund amount and reason, and submit.
+8. Verify in Admin UI that the line is `CANCELLED_BY_SELLER`, the refund status/amount is shown, inventory is `1`, the Listing is `AVAILABLE`, and the Seller is flagged as untrusted.
+9. Verify the canceled ownership transfer is shown as voided in the lineage/history view.
+
+The current backend supports this flow through the exception endpoint, but the Admin screen required by this checklist is still pending.
 
 ---
 

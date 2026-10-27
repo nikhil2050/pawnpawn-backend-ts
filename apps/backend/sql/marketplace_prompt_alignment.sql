@@ -11,9 +11,37 @@ BEGIN;
 -- A source order-line makes lineage writes idempotent across event retries
 -- without treating a future resale to the same customer as a duplicate.
 ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS order_line_item_id TEXT;
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS voided_reason TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_product_lineage_order_line
   ON product_lineage(order_line_item_id)
   WHERE order_line_item_id IS NOT NULL;
+
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS flag_reason TEXT;
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ;
+ALTER TABLE hq_fulfillment ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(12, 2);
+ALTER TABLE hq_fulfillment ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED';
+ALTER TABLE hq_fulfillment ADD COLUMN IF NOT EXISTS exception_reason TEXT;
+ALTER TABLE hq_fulfillment ADD COLUMN IF NOT EXISTS exception_by TEXT;
+ALTER TABLE hq_fulfillment ADD COLUMN IF NOT EXISTS exception_at TIMESTAMPTZ;
+
+DO $$
+DECLARE v_constraint_name TEXT;
+BEGIN
+  SELECT conname INTO v_constraint_name
+    FROM pg_constraint
+   WHERE conrelid = 'hq_fulfillment'::regclass
+     AND contype = 'c'
+     AND pg_get_constraintdef(oid) LIKE '%hq_status%'
+   LIMIT 1;
+  IF v_constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE hq_fulfillment DROP CONSTRAINT %I', v_constraint_name);
+  END IF;
+  ALTER TABLE hq_fulfillment
+    ADD CONSTRAINT hq_fulfillment_status_check
+    CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED_BY_SELLER'));
+END $$;
 
 -- Rename the former public state without losing existing approved inventory.
 -- `listing_status` is text, so this supports databases created before the

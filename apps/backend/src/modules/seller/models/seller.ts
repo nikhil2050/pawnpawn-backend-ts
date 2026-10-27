@@ -23,4 +23,7 @@ export const Seller = model.define("seller", {
   
   verification_status: model.enum(["PENDING", "VERIFIED"]).default("PENDING"),
   is_deactivated: model.boolean().default(false),
+  is_flagged: model.boolean().default(false),
+  flag_reason: model.text().nullable(),
+  flagged_at: model.dateTime().nullable(),
 })

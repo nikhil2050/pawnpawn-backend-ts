@@ -91,7 +91,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
 | Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
-| Admin HQ fulfillments | `POST /admin/hq-fulfillments/:id` | Implemented |
+| Admin HQ fulfillments | `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception` | Implemented |
 | Admin lineage REST | `/admin/lineage*` | **Planned** |
 
 Only these route files exist today:
@@ -1825,7 +1825,49 @@ Valid actions: `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, `MARK_DELIV
 }
 ```
 
-### 6.10 Public Seller Profile (Working Today)
+### 6.10 HQ Line-Item Exceptions
+
+> **Status: IMPLEMENTED (MVP)** — `POST /admin/hq-fulfillments/:id/exception` operates on one order line only, so ready items in a mixed cart can be dispatched while another seller's item remains delayed.
+
+Split dispatch:
+
+```json
+{
+  "action": "SPLIT_DISPATCH",
+  "target_status": "DISPATCHED",
+  "reason": "Item authenticated and packed"
+}
+```
+
+Cancellation and partial refund:
+
+```json
+{
+  "action": "CANCEL_AND_REFUND",
+  "refund_amount": 35000,
+  "reason": "Seller failed to deliver the item"
+}
+```
+
+Cancellation marks the line `CANCELLED_BY_SELLER`, refunds through Medusa's
+Payment module when a captured payment exists (otherwise records the dummy
+refund), restores inventory to one, returns the Listing to `AVAILABLE`,
+republishes the product, flags the Seller as untrusted, and voids the canceled
+line's lineage transfer. Repeated cancellation is idempotent.
+
+**Exception response (200):**
+```json
+{
+  "fulfillment": {
+    "id": "hq_01M...",
+    "hq_status": "CANCELLED_BY_SELLER",
+    "refund_amount": 35000,
+    "refund_status": "REFUNDED"
+  }
+}
+```
+
+### 6.11 Public Seller Profile (Working Today)
 
 > **Status: IMPLEMENTED** — `GET /store/sellers/:handle` returns a seller's public profile and their published listings.
 

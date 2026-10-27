@@ -116,6 +116,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   │   ├── admin/listings/route.ts # GET /admin/listings
         │       │   │   ├── admin/listings/[id]/review/route.ts # POST /admin/listings/:id/review
         │       │   │   ├── admin/hq-fulfillments/[id]/route.ts # POST /admin/hq-fulfillments/:id
+        │       │   │   ├── admin/hq-fulfillments/[id]/exception/route.ts # line-item exception API
         │       │   │   └── middlewares.ts       # Store search + customer auth (configureStoreSearch, authenticate)
         │       │   ├── admin/
         │       │   │   └── routes/sellers/page.tsx # Sellers page in Medusa Admin (/app/sellers)
@@ -237,6 +238,9 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — HQ fulfillment is modeled per order line/listing, not per order.
 - [x] **Implemented** — HQ states progress through `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, and `DELIVERED`.
 - [x] **Implemented** — Admin HQ transition route validates and updates fulfillment records.
+- [x] **Implemented (MVP)** — `POST /admin/hq-fulfillments/:id/exception` supports line-item split dispatch and `CANCELLED_BY_SELLER` cancellation.
+- [x] **Implemented (MVP)** — Cancellation performs an idempotent partial refund through Medusa Payment when captured, restores one unit of inventory, reopens the Listing, flags the Seller, and voids the canceled lineage transfer.
+- [ ] **Pending UI** — Build the Admin HQ exception screen so split dispatch and cancel/refund can be tested without direct API calls.
 - [x] **Partial** — Certificate URL storage exists; certificate generation and document storage adapters are not connected.
 - [x] **Partial** — Delivery-gated payout timestamp/state exists in HQ data; Razorpay Route release and idempotency adapter are not connected.
 - [ ] **Planned** — Returns, disputes, failed authentication, and payout reversal workflows.
@@ -386,9 +390,14 @@ CREATE TABLE hq_fulfillment (
     seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
     buyer_id TEXT,
     hq_status TEXT NOT NULL DEFAULT 'WAITING_FOR_ARRIVAL'
-      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED')),
+      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED_BY_SELLER')),
     certificate_url TEXT,
     payout_released_at TIMESTAMPTZ,
+    refund_amount DECIMAL(12, 2),
+    refund_status TEXT,
+    exception_reason TEXT,
+    exception_by TEXT,
+    exception_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
@@ -401,7 +410,7 @@ CREATE INDEX IF NOT EXISTS idx_hq_fulfillment_seller_status ON hq_fulfillment(se
 |-----------|--------|---------|
 | `seller_verification_status` | `PENDING`, `VERIFIED` | `seller.verification_status` |
 | `listing_status` | `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, `REJECTED` | `listing.listing_status` |
-| `hq_status` | `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED` | `hq_fulfillment.hq_status` |
+| `hq_status` | `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED`, `CANCELLED_BY_SELLER` | `hq_fulfillment.hq_status` |
 
 > `seller.seller_trust`, `seller.seller_category`, and `listing.listing_type` are **VARCHAR with defaults**, not PostgreSQL enums, so new values can be added without a migration. Application-level values are documented in `SAMPLE_DATA.md`.
 

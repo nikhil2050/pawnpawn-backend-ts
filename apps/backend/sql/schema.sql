@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS seller (
     -- Seller biography/description
     -- Java: @Column(columnDefinition = "TEXT")
     bio TEXT,
+    is_flagged BOOLEAN NOT NULL DEFAULT FALSE,
+    flag_reason TEXT,
+    flagged_at TIMESTAMPTZ,
 
     -- Creation timestamp (auto-set by database)
     -- Java: @CreatedDate
@@ -129,6 +132,10 @@ DO $$ BEGIN
 EXCEPTION
     WHEN duplicate_column THEN NULL;
 END $$;
+
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS flag_reason TEXT;
+ALTER TABLE seller ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMPTZ;
 
 -- Add customer_id link to existing seller table (idempotent)
 DO $$ BEGIN
@@ -202,6 +209,8 @@ CREATE TABLE IF NOT EXISTS product_lineage (
     -- Originating Medusa order line. Unique so event delivery/retries create
     -- one provenance entry per completed marketplace line item.
     order_line_item_id VARCHAR(100),
+    voided_at TIMESTAMPTZ,
+    voided_reason TEXT,
 
     -- Transaction price at time of sale (decimal with 2 places)
     -- Java: @Column(nullable = false, precision = 12, scale = 2) with BigDecimal
@@ -222,6 +231,8 @@ CREATE TABLE IF NOT EXISTS product_lineage (
 -- Existing local databases predate the source-order-line idempotency key.
 -- Add it before its index is created so this script remains safe to re-run.
 ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS order_line_item_id VARCHAR(100);
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
+ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS voided_reason TEXT;
 
 -- Index on product_id for querying a product's ownership history
 CREATE INDEX IF NOT EXISTS idx_product_lineage_product ON product_lineage(product_id);
@@ -274,9 +285,14 @@ CREATE TABLE IF NOT EXISTS hq_fulfillment (
     seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
     buyer_id TEXT,
     hq_status TEXT NOT NULL DEFAULT 'WAITING_FOR_ARRIVAL'
-      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED')),
+      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED_BY_SELLER')),
     certificate_url TEXT,
     payout_released_at TIMESTAMPTZ,
+    refund_amount DECIMAL(12, 2),
+    refund_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED',
+    exception_reason TEXT,
+    exception_by TEXT,
+    exception_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
@@ -348,6 +364,7 @@ SELECT DISTINCT ON (pl.product_id)
     pl.price AS last_sale_price,
     pl.transacted_at AS last_transacted_at
 FROM product_lineage pl
+WHERE pl.voided_at IS NULL
 ORDER BY pl.product_id, pl.transacted_at DESC;
 
 -- View: Aggregated seller statistics (total sales, revenue, last sale)
@@ -362,5 +379,5 @@ SELECT
     COALESCE(SUM(pl.price), 0) AS total_revenue,
     MAX(pl.transacted_at) AS last_sale_at
 FROM seller s
-LEFT JOIN product_lineage pl ON s.id = pl.seller_id
+LEFT JOIN product_lineage pl ON s.id = pl.seller_id AND pl.voided_at IS NULL
 GROUP BY s.id, s.handle, s.store_name, s.verification_status;

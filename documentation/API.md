@@ -217,6 +217,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 > **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), and the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/{id}`). `POST/PATCH /store/products`, auction, purchase, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
+Product creation normalizes the handle and allocates a unique value server-side. When `abc` already exists, the backend tries `abc-2`, then `abc-3`, and so on before invoking Medusa's native product create handler. The Admin success notification includes the final persisted handle.
+
 ```yaml
 openapi: 3.0.3
 info:
@@ -1454,6 +1456,10 @@ Content-Type: application/json
 ### 6.3 Create a Listing (Implemented)
 
 > **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/products` (the existing `/store/seller/listings` route is an alias). The route creates a draft Medusa product with native category/collection/options, one inventory-managed variant with a canonical celebrity SKU, and a `Listing` row in `PENDING_APPROVAL`. Direct `POST /store/products` is **Planned**.
+
+Product creation accepts one value per option type. In Admin, adding Size, Colour, Authenticity, or another existing option starts with no selected value; any retained legacy selection is reduced to its latest value. Choose one value, and choosing another replaces the prior choice. Its value control shows the neutral localized `Select` placeholder. The local Admin bundle receives the same patch before development and production starts, with a new route-asset URL and a cleared Vite dependency cache to prevent reuse of an earlier cached bundle. Repeating an option title or supplying multiple values is rejected, so a product creates exactly one variant.
+
+The Admin Title field removes hyphens as they are entered and derives a lowercase Handle using hyphens between words. Direct Admin and Seller product requests containing a hyphen in `title` return `400`.
 
 **Request:**
 ```http

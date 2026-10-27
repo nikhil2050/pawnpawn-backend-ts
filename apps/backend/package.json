@@ -13,6 +13,9 @@
     "medusa"
   ],
   "scripts": {
+    "postinstall": "node scripts/patch-medusa-dashboard-single-option.cjs",
+    "predev": "node scripts/patch-medusa-dashboard-single-option.cjs",
+    "prestart": "node scripts/patch-medusa-dashboard-single-option.cjs",
     "build": "medusa build",
     "start": "medusa start",
     "dev": "medusa develop",

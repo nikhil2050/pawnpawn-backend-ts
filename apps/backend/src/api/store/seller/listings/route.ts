@@ -21,6 +21,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   if (!profile) return res.status(403).json({ message: "An active seller profile is required" })
   const body = req.body as any
   if (!body.title?.trim() || body.price == null || !body.condition) return res.status(400).json({ message: "title, price and condition are required" })
+  // Keep seller submissions one-of-one even if this route is called without
+  // the shared middleware. See documentation/AI_CONTEXT.md §4.2 and §8.4.
+  const options = Array.isArray(body.options) ? body.options : []
+  const optionTitles = new Set<string>()
+  if (options.some((option: any) => {
+    const title = typeof option?.title === "string" ? option.title.trim().toLowerCase() : ""
+    if (title && optionTitles.has(title)) return true
+    if (title) optionTitles.add(title)
+    return Array.isArray(option?.values) && option.values.length !== 1
+  })) {
+    return res.status(400).json({ message: "each product option must have exactly one value; a listing has one variant" })
+  }
   const productService = req.scope.resolve<any>(Modules.PRODUCT)
   // Generate the celebrity SKU before product creation so the unique item can
   // be reconciled with Medusa inventory and the Listing after creation.

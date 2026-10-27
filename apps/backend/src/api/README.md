@@ -1,5 +1,7 @@
 # Custom API Routes
 
+Read the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record) for the seller, Listing, mixed-cart, and HQ fulfillment contracts implemented in this backend.
+
 An API Route is a REST API endpoint.
 
 An API Route is created in a TypeScript or JavaScript file under the `/src/api` directory of your Medusa application. The file’s name must be `route.ts` or `route.js`.

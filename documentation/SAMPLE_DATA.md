@@ -1,8 +1,10 @@
 # Sample Data
 
-Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, and provenance/lineage history.
+The canonical seed represents the celebrity-to-fan marketplace described in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record): 8 sellers, 13 seller-mapped published products/listings, 35 inventory items and levels, 5 buyers, and 8 lineage records. Four upstream Medusa demo products remain as `draft` records without a marketplace seller.
 
-> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Storefront seller routes (`/store/seller/*`, `/store/purchase`, `/store/products/:id/lineage`) and admin lineage routes (`/admin/lineage*`) still have no custom REST routes — use the module services (`container.resolve("seller")`, `container.resolve("lineage")`) or SQL. See `API.md` → Current Implementation Status.
+Seeded demo data for local development: Hollywood-celebrity sellers, buyer accounts with working logins, celebrity memorabilia listings, marketplace `Listing` rows, inventory records, and provenance/lineage history.
+
+> **API availability:** listings and buyers are reachable through Medusa core routes (`GET /store/products`, `POST /auth/customer/emailpass`, `POST /store/customers`). Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and the **Sellers** page in the Medusa Admin at `/app/sellers`. Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`). `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` still have no custom REST routes — use the module services (`container.resolve("seller")`, `container.resolve("lineage")`, `container.resolve("listing")`, `container.resolve("hq_fulfillment")`) or SQL. See `API.md` → Current Implementation Status.
 
 ## Seed
 
@@ -48,7 +50,7 @@ Allowed values: `seller_trust` = `trusted` | `untrusted`; `seller_category` = `c
 
 1. Open `http://localhost:9000/app` and sign in with `admin@pawnpawn.com` / `supersecret`.
 2. Select **Sellers** in the sidebar (direct URL: `http://localhost:9000/app/sellers`).
-3. The page lists all 7 sellers with store, handle, category, trust, verification, bio, social handle, and customer link.
+3. The page lists all 8 sellers with store, handle, category, trust, verification, bio, social handle, and customer link.
 
 The page calls `GET /admin/seller` with the admin session. The same data is available over REST:
 

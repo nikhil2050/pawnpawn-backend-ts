@@ -1,5 +1,7 @@
 # Local Deployment & Testing Guide — PawnPawn Backend
 
+The marketplace workflow and resolved implementation decisions are documented in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record).
+
 > **Purpose**: Step-by-step guide to deploy and test the PawnPawn Medusa v2 backend locally.
 > **Location**: `/documentation/LOCAL_DEPLOYMENT.md`
 > **Target audience**: Freshers / new developers joining the project
@@ -163,7 +165,7 @@ Look for: `listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'`
 
 ### Load sample data (optional)
 
-Seeds 7 sellers (6 celebrity + 1 buyer-turned-seller), 5 buyer accounts, celebrity listings with USD/INR prices (the Europe/EUR region exists but seeded listings do not include EUR prices), and purchase lineage:
+Seeds 8 sellers (7 marketplace sellers plus the existing platform seller), 5 buyer accounts, 13 seller-mapped celebrity/resale listings with USD/INR prices, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
@@ -265,8 +267,8 @@ Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products oth
 
 ### Custom Routes: Current Status
 
-> **Implemented reads + writes:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), plus the Medusa Admin **Sellers** page at `/app/sellers`.  
-> **Planned:** `/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, and the Medusa Admin **Sellers** page at `/app/sellers`.  
+> **Planned:** `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 ### Test Seller Module (Working Today)
 
@@ -329,7 +331,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 Expected: `7 ['beyonce', 'rihanna', 'kimkardashian', 'leonardodicaprio', 'sarah_resells', 'snoopdogg', 'dwaynejohnson']`, with `1` result for each filter above.
 
-In the browser, open `http://localhost:9000/app/sellers`. The **Sellers** sidebar page should list all 7 sellers with trust, category, verification, bio, social handle, and customer-link columns. Opening the page also logs a successful `GET /admin/seller?limit=100` request.
+In the browser, open `http://localhost:9000/app/sellers`. The **Sellers** sidebar page should list all 8 sellers with trust, category, verification, bio, social handle, and customer-link columns. Opening the page also logs a successful `GET /admin/seller?limit=100` request.
 
 Unauthenticated access should return `401`:
 
@@ -337,18 +339,58 @@ Unauthenticated access should return `401`:
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9000/admin/seller
 ```
 
-### Test Create Product (Fixed Price) — Planned
+### Test Create a Listing (Implemented)
 
-`POST /store/products` (custom seller listing) is not implemented. Until it is, create listings with the Admin API or directly in the database. The seeded example:
+`POST /store/seller/listings` creates a draft product + Listing row for the authenticated seller. Listings start in `PENDING_APPROVAL` until an admin reviews them.
 
 ```bash
-psql -h localhost -U postgres -d pawnpawn_db -c \
-  "SELECT id, title, listing_type FROM product WHERE id = 'prod_snoop_001';"
+# First onboard as a buyer-turned-seller, then:
+TOKEN=<seller_token>
+curl -s -X POST http://localhost:9000/store/seller/listings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"Vintage Gold Watch","description":"1980s Rolex Submariner","price":2500.00,"condition":"excellent","listing_type":"FIXED_PRICE"}'
+```
+
+### Test Seller Onboarding (Implemented)
+
+```bash
+TOKEN=<customer_token>
+curl -s -X POST http://localhost:9000/store/seller/onboard \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"handle":"rajesh_jewelers","store_name":"Rajesh Jewelers"}'
+```
+
+### Test Public Seller Profile (Implemented)
+
+```bash
+curl -s http://localhost:9000/store/sellers/snoopdogg
+```
+
+### Test Admin Listing Review (Implemented)
+
+```bash
+TOKEN=<admin_token>
+curl -s -X POST http://localhost:9000/admin/listings/listing_01M.../review \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"action":"APPROVE"}'
+```
+
+### Test HQ Fulfillment Lifecycle (Implemented)
+
+```bash
+TOKEN=<admin_token>
+curl -s -X POST http://localhost:9000/admin/hq-fulfillments/hq_01M.../review \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"action":"AUTHENTICATE_AND_PACK","certificate_url":"https://cdn.pawnpawn.com/cert/hq_01M....pdf"}'
 ```
 
 ### Test Create Product (Auction) — Planned
 
-Auction routes are not implemented. `listing_type = 'AUCTION'` is stored on the product row, but there is no auction workflow yet.
+Auction routes are not implemented. `listing_type = 'AUCTION'` is stored on the `listing` row, but there is no auction workflow yet.
 
 ### Test Get Product Lineage — Planned
 
@@ -490,20 +532,26 @@ Before considering your local setup complete, verify:
 - [ ] `npm run db:import` completed without errors
 - [ ] `seller` and `product_lineage` tables exist in DB
 - [ ] `product` table has `listing_type` column
+- [ ] `listing` and `hq_fulfillment` tables exist in DB
 - [ ] Admin login works: `POST /auth/user/emailpass` with `admin@pawnpawn.com` / `supersecret`
 - [ ] Buyer login works: `POST /auth/customer/emailpass` with `sarah.johnson@gmail.com` / `buyer1234`
 - [ ] Dev server starts on `http://localhost:9000`
 - [ ] `GET /health` returns healthy
 - [ ] `GET /store/products` returns 17 products with the publishable key
 - [ ] `medusa exec ./src/scripts/verify-sample-data.ts` passes
-- [ ] `GET /admin/seller` returns 7 sellers with an admin token (401 without one)
-- [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 7 sellers
+- [ ] `GET /admin/seller` returns 8 sellers with an admin token (401 without one)
+- [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 8 sellers
 - [ ] `POST /admin/seller` creates a seller and returns 201
 - [ ] `PATCH /admin/seller/:id` updates seller fields and returns 200
 - [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
+- [ ] `POST /store/seller/onboard` creates a seller profile for an authenticated customer
+- [ ] `GET /store/sellers/:handle` returns a public seller profile + products
+- [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
+- [ ] `POST /admin/listings/:id/review` approves/returns a listing
+- [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (`/store/seller/*`, custom `POST /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Admin seller CRUD (read/create/update/deactivate) is implemented and should be included in validation.
+> Remaining custom routes (`PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, `/admin/lineage*`) are not implemented yet. Seller onboarding, seller listings, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
 
 ---
 
@@ -516,7 +564,7 @@ apps/backend/
 ├── .env.example              # Environment template
 ├── package.json              # Scripts: dev, start, build, db:import
 ├── sql/
-│   ├── schema.sql            # Custom DDL: seller, product_lineage, listing_type
+│   ├── schema.sql            # Custom DDL: seller, product_lineage, listing_type, listing, hq_fulfillment
 │   └── sample-data.sql       # Idempotent demo seed
 ├── src/
 │   ├── modules/
@@ -524,21 +572,39 @@ apps/backend/
 │   │   │   ├── index.ts          # Module("seller", ...)
 │   │   │   ├── models/seller.ts  # Seller data model
 │   │   │   └── service.ts        # SellerModuleService
-│   │   └── lineage/
-│   │       ├── index.ts          # Module("lineage", ...)
-│   │       ├── models/product-lineage.ts  # ProductLineage data model
-│   │       └── service.ts        # LineageModuleService
+│   │   ├── lineage/
+│   │   │   ├── index.ts          # Module("lineage", ...)
+│   │   │   ├── models/product-lineage.ts  # ProductLineage data model
+│   │   │   └── service.ts        # LineageModuleService
+│   │   ├── listing/
+│   │   │   ├── index.ts          # Module("listing", ...)
+│   │   │   ├── models/listing.ts # Listing data model
+│   │   │   └── service.ts        # ListingModuleService (reviewListing)
+│   │   └── hq-fulfillment/
+│   │       ├── index.ts          # Module("hq_fulfillment", ...)
+│   │       ├── models/hq-fulfillment.ts  # HqFulfillment data model
+│   │       └── service.ts        # HqFulfillmentModuleService
 │   ├── scripts/
 │   │   ├── import-sql.ts         # TypeScript runner for schema.sql
 │   │   └── verify-sample-data.ts # Round-trip module verification
 │   ├── admin/
 │   │   └── routes/sellers/page.tsx # Admin Sellers list page (/app/sellers)
+│   ├── subscribers/
+│   │   └── order-placed-hq-fulfillment.ts # Marks listings SOLD, creates HQ fulfillment, records lineage
 │   └── api/
 │       ├── store/custom/route.ts # Placeholder (no PawnPawn store routes yet)
+│       ├── store/seller/onboard/route.ts          # POST /store/seller/onboard
+│       ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
+│       ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
+│       ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
 │       ├── admin/custom/route.ts # Placeholder
-│       ├── admin/seller/route.ts # GET /admin/seller (list/filter)
-│       ├── admin/seller/[id]/route.ts # GET /admin/seller/:id
-│       └── middlewares.ts        # Store search middleware
+│       ├── admin/seller/route.ts # GET/POST /admin/seller
+│       ├── admin/seller/[id]/route.ts # GET/PATCH/DELETE /admin/seller/:id
+│       ├── admin/seller/[id]/listings/route.ts # GET /admin/seller/:id/listings
+│       ├── admin/listings/route.ts # GET /admin/listings
+│       ├── admin/listings/[id]/review/route.ts # POST /admin/listings/:id/review
+│       ├── admin/hq-fulfillments/[id]/route.ts # POST /admin/hq-fulfillments/:id
+│       └── middlewares.ts        # Store search + customer auth middleware
 └── README.md                     # Medusa scaffolding (points to documentation/)
 
 documentation/

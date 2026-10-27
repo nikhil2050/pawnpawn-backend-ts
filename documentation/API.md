@@ -1,5 +1,7 @@
 # API.md - PawnPawn Backend API Documentation
 
+The celebrity-to-fan lifecycle, seller identity, Listing module boundary, mixed-seller checkout, HQ states, and payout timing are defined in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record).
+
 > **Project**: PawnPawn Backend (Medusa v2)  
 > **Location**: `/documentation/API.md`  
 > **Authors**: Backend Engineering Team  
@@ -72,24 +74,36 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Admin core | Regions, products, customers, orders, API keys | Implemented (Medusa core) |
 | Seller module | `SellerModuleService` (CRUD + trust/category methods) | Implemented (service only) |
 | Lineage module | `LineageModuleService` (`recordTransfer`, `getLineageHistory`, `getCurrentOwner`) | Implemented (service only) |
-| Seller onboarding | `POST /store/seller/onboard`, `GET/PATCH /store/seller/me` | **Planned** |
-| Seller listings | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** |
+| Listing module | `ListingModuleService` (`reviewListing`) | Implemented (service only) |
+| HQ Fulfillment module | `HqFulfillmentModuleService` | Implemented (service only) |
+| Seller onboarding | `POST /store/seller/onboard` | Implemented |
+| Seller profile | `GET /store/sellers/:handle` | Implemented |
+| Seller listings | `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id` | Implemented |
+| Seller field updates | `PATCH /store/seller/me` | **Planned** |
+| Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** |
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
 | Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | **Planned** |
-| Admin seller read API | `GET /admin/seller`, `GET /admin/seller/:id` | Implemented |
-| Admin seller create | `POST /admin/seller` | Implemented |
-| Admin seller update | `PATCH /admin/seller/:id` (any seller field) | Implemented |
-| Admin seller deactivate | `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) | Implemented |
-| Admin sellers page | Admin UI route `/app/sellers` | Implemented |
+| Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
+| Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
+| Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
+| Admin HQ fulfillments | `POST /admin/hq-fulfillments/:id` | Implemented |
 | Admin lineage REST | `/admin/lineage*` | **Planned** |
 
 Only these route files exist today:
 
 ```text
 apps/backend/src/api/admin/custom/route.ts
-apps/backend/src/api/admin/seller/route.ts          # GET /admin/seller (list/filter), POST /admin/seller
-apps/backend/src/api/admin/seller/[id]/route.ts    # GET/PATCH/DELETE /admin/seller/:id
+apps/backend/src/api/admin/hq-fulfillments/[id]/route.ts     # POST /admin/hq-fulfillments/:id
+apps/backend/src/api/admin/listings/route.ts               # GET /admin/listings
+apps/backend/src/api/admin/listings/[id]/review/route.ts   # POST /admin/listings/:id/review
+apps/backend/src/api/admin/seller/route.ts                 # GET/POST /admin/seller
+apps/backend/src/api/admin/seller/[id]/route.ts            # GET/PATCH/DELETE /admin/seller/:id
+apps/backend/src/api/admin/seller/[id]/listings/route.ts   # GET /admin/seller/:id/listings
 apps/backend/src/api/store/custom/route.ts
+apps/backend/src/api/store/seller/onboard/route.ts          # POST /store/seller/onboard
+apps/backend/src/api/store/seller/listings/route.ts         # GET/POST /store/seller/listings
+apps/backend/src/api/store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
+apps/backend/src/api/store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
 apps/backend/src/api/middlewares.ts
 ```
 
@@ -104,9 +118,8 @@ Most custom-module operations still run through services rather than REST. The s
 ```ts
 const sellerService = container.resolve("seller")   // not "sellerModuleService"
 const lineageService = container.resolve("lineage") // not "lineageModuleService"
-
-const trusted = await sellerService.findTrustedSellers()
-const history = await lineageService.getLineageHistory("prod_snoop_001")
+const listingService = container.resolve("listing")
+const hqFulfillmentService = container.resolve("hq_fulfillment")
 ```
 
 A runnable check lives in `apps/backend/src/scripts/verify-sample-data.ts`:
@@ -139,11 +152,11 @@ cd apps/backend
 
 | Actor | Claim Value | Access Scope |
 |-------|-------------|--------------|
-| Customer (Buyer) | `customer` | Store API (`/store/*`) |
-| Seller | *(no separate auth actor yet)* | Sellers are customers linked via `seller.customer_id`; seller-only routes are planned |
+| Customer (Buyer) | `customer` | Store API (`/store/*`); also acts as a Seller once onboarded |
+| Seller | `customer` (same actor) | Seller-scoped routes under `/store/seller/*` |
 | Admin | `admin` | Admin API (`/admin/*`) |
 
-> There is no Medusa `seller` auth actor. A seller account is currently a normal customer plus a `seller` row referencing it through `customer_id`.
+> A seller account is a customer with an associated `seller` row (`seller.customer_id`). Seller-only routes (`/store/seller/*`) require a customer auth actor whose `customer_id` resolves to an active (non-deactivated) seller profile. The `authenticate('customer', ['session', 'bearer'])` middleware is applied to `/store/seller*`.
 
 Publishable keys live in the `api_key` table:
 
@@ -198,7 +211,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. Only the auth paths, core store/admin routes, `GET /store/products/{id}`, and the admin seller paths (`GET /admin/seller`, `GET /admin/seller/{id}`, `POST /admin/seller`, `PATCH /admin/seller/{id}`, `DELETE /admin/seller/{id}`) are actually served today. `/store/seller/*`, custom `POST/PATCH /store/products`, auction, purchase, lineage, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), and the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/{id}`). `POST/PATCH /store/products`, auction, purchase, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 ```yaml
 openapi: 3.0.3
@@ -339,6 +352,87 @@ components:
         transacted_at:
           type: string
           format: date-time
+
+    Listing:
+      type: object
+      properties:
+        id:
+          type: string
+        seller_id:
+          type: string
+        product_id:
+          type: string
+        listing_status:
+          type: string
+          enum: [PENDING_APPROVAL, LISTED, SOLD, REJECTED]
+          default: PENDING_APPROVAL
+        listing_type:
+          type: string
+          enum: [FIXED_PRICE, AUCTION]
+          default: FIXED_PRICE
+        item_condition:
+          type: string
+          nullable: true
+        rejection_feedback:
+          type: string
+          nullable: true
+        reviewed_by:
+          type: string
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    HqFulfillment:
+      type: object
+      properties:
+        id:
+          type: string
+        order_id:
+          type: string
+        order_line_item_id:
+          type: string
+        listing_id:
+          type: string
+        product_id:
+          type: string
+        seller_id:
+          type: string
+        buyer_id:
+          type: string
+          nullable: true
+        hq_status:
+          type: string
+          enum: [WAITING_FOR_ARRIVAL, ARRIVED_AT_HQ, AUTHENTICATED_AND_PACKED, DISPATCHED, DELIVERED]
+          default: WAITING_FOR_ARRIVAL
+        certificate_url:
+          type: string
+          nullable: true
+        payout_released_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
 
     Error:
       type: object
@@ -502,16 +596,199 @@ paths:
   /store/seller/onboard:
     post:
       tags: [Seller]
-      summary: Onboard a new seller
+      summary: Onboard the authenticated customer as a seller
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
       requestBody:
-        $ref: '#/components/requestBodies/SellerOnboardRequest'
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle, store_name]
+              properties:
+                handle:
+                  type: string
+                store_name:
+                  type: string
+                avatar_url:
+                  type: string
+                  nullable: true
       responses:
-        '201':
+        '200':
           description: Seller created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Seller'
+                type: object
+                properties:
+                  seller:
+                    $ref: '#/components/schemas/Seller'
+        '400':
+          description: Missing handle or store_name
+        '401':
+          description: Customer authentication required
+        '409':
+          description: A seller profile already exists for this customer
+
+  /store/sellers/{handle}:
+    get:
+      tags: [Seller]
+      summary: Public seller profile and listed products
+      parameters:
+        - name: handle
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Seller profile + published products
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seller:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      handle:
+                        type: string
+                      store_name:
+                        type: string
+                      avatar_url:
+                        type: string
+                        nullable: true
+                      bio:
+                        type: string
+                        nullable: true
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+        '404':
+          description: Seller not found or deactivated
+
+  /store/seller/listings:
+    get:
+      tags: [Seller]
+      summary: List the authenticated seller's listings
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Seller listings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Listing'
+        '403':
+          description: An active seller profile is required
+
+    post:
+      tags: [Seller]
+      summary: Create a listing (creates a draft product + Listing row)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, price, condition]
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                handle:
+                  type: string
+                price:
+                  type: number
+                  format: decimal
+                currency_code:
+                  type: string
+                  default: usd
+                condition:
+                  type: string
+                listing_type:
+                  type: string
+                  enum: [FIXED_PRICE, AUCTION]
+                  default: FIXED_PRICE
+                images:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    $ref: '#/components/schemas/Listing'
+                  product:
+                    $ref: '#/components/schemas/Product'
+        '400':
+          description: Missing title, price, or condition
+        '403':
+          description: An active seller profile is required
+
+  /store/seller/listings/{id}:
+    patch:
+      tags: [Seller]
+      summary: Update the authenticated seller's own listing
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                handle:
+                  type: string
+                condition:
+                  type: string
+                listing_type:
+                  type: string
+                  enum: [FIXED_PRICE, AUCTION]
+      responses:
+        '200':
+          description: Updated listing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    $ref: '#/components/schemas/Listing'
+        '403':
+          description: Not the listing owner, or no active seller profile
+        '409':
+          description: Sold listings cannot be edited
 
   /store/seller/me:
     get:
@@ -995,9 +1272,27 @@ paths:
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
-| POST | `/store/seller/onboard` | No | Register a new seller | `201 Created` | Planned |
+| POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard the authenticated customer as a seller | `201 Created` | Implemented |
+| GET | `/store/sellers/:handle` | No | Public seller profile + listed products | `200 OK` | Implemented |
+| GET | `/store/seller/listings` | Bearer/Cookie (customer) | List the authenticated seller's listings | `200 OK` | Implemented |
+| POST | `/store/seller/listings` | Bearer/Cookie (customer) | Create a listing (draft product + Listing row) | `201 Created` | Implemented |
+| PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update the authenticated seller's own listing | `200 OK` | Implemented |
 | GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | `200 OK` | Planned |
 | PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | `200 OK` | Planned |
+
+### Listing APIs
+
+| Method | Endpoint | Auth | Description | Success Status | Status |
+|--------|----------|------|-------------|----------------|--------|
+| GET | `/admin/listings` | Bearer | List all listings (with seller/product joins) | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | `200 OK` | Implemented |
+| GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
+
+### HQ Fulfillment APIs
+
+| Method | Endpoint | Auth | Description | Success Status | Status |
+|--------|----------|------|-------------|----------------|--------|
+| POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment through its lifecycle | `200 OK` | Implemented |
 
 ### Product APIs
 
@@ -1028,11 +1323,15 @@ paths:
 | POST | `/admin/seller` | Bearer | Create seller | `201 Created` | Implemented |
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | `200 OK` | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | `200 OK` | Implemented |
+| GET | `/admin/listings` | Bearer | List all listings (with seller/product) | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | `200 OK` | Implemented |
+| GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
+| POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | `200 OK` | Implemented |
 | GET | `/admin/lineage` | Bearer | List all lineage entries | `200 OK` | Planned |
 | GET | `/admin/lineage/:id` | Bearer | Get lineage by ID | `200 OK` | Planned |
 | POST | `/admin/lineage` | Bearer | Record lineage transfer | `201 Created` | Planned |
 
-> **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. The same data is rendered in the Medusa Admin at **Sellers** (`http://localhost:9000/app/sellers`). Lineage REST remains **Planned**; use the module service or SQL until those routes exist.
+> **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. Listing review, per-seller listings, and HQ fulfillment transitions are also live. Lineage REST remains **Planned**; use the module service or SQL until those routes exist.
 
 ### Custom Module Service Methods
 
@@ -1065,12 +1364,22 @@ const lineageService = container.resolve("lineage")
 | `getLineageHistory(productId)` | Transfers for a product, ascending |
 | `getCurrentOwner(productId)` | Most recent `buyer_id`, or `null` |
 
+**ListingModuleService** (custom methods):
+
+| Method | Description |
+|--------|-------------|
+| `reviewListing(id, status, userId, feedback?)` | Set `listing_status` to `LISTED` or `REJECTED`, record reviewer + feedback |
+
+**HqFulfillmentModuleService**: no custom methods beyond generated CRUD (`listHqFulfillments`, `retrieveHqFulfillment`, `createHqFulfillments`, `updateHqFulfillments`, `deleteHqFulfillments`).
+
 **Generated CRUD methods** (provided by `MedusaService`, model-suffixed):
 
 | Model | List | Retrieve | Create | Update | Delete |
 |-------|------|----------|--------|--------|--------|
 | `Seller` | `listSellers` | `retrieveSeller` | `createSellers` | `updateSellers` | `deleteSellers` |
 | `ProductLineage` | `listProductLineages` | `retrieveProductLineage` | `createProductLineages` | `updateProductLineages` | `deleteProductLineages` |
+| `Listing` | `listListings` | `retrieveListing` | `createListings` | `updateListings` | `deleteListings` |
+| `HqFulfillment` | `listHqFulfillments` | `retrieveHqFulfillment` | `createHqFulfillments` | `updateHqFulfillments` | `deleteHqFulfillments` |
 
 > There is no generic `this.list()` / `this.update()` in a `MedusaService` subclass. Calling them throws `this.list is not a function`. `updateSellers` takes `{ id, ...fields }` or `{ selector, data }`.
 
@@ -1100,77 +1409,92 @@ Content-Type: application/json
 
 ### 6.2 Seller Onboard
 
-> **Status: PLANNED** — `/store/seller/onboard` is not implemented yet. The contract below documents the intended behaviour. Until then, create sellers through `sellerService.createSellers(...)` in a script or SQL.
+> **Status: IMPLEMENTED** — `POST /store/seller/onboard` requires an authenticated customer (Bearer/session). It creates a `seller` row linked to that customer with `seller_trust: "untrusted"`, `seller_category: "other"`, `verification_status: "PENDING"`, and returns 409 if a profile already exists.
 
 **Request:**
 ```http
 POST /store/seller/onboard
+Authorization: Bearer <customer_token>
 Content-Type: application/json
 
 {
   "handle": "rajesh_jewelers",
   "store_name": "Rajesh Jewelers",
-  "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg",
-  "seller_trust": "untrusted",
-  "seller_category": "other",
-  "social_media_handle": "@rajeshjewelers",
-  "bio": "Family jeweler reselling authenticated pieces."
+  "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg"
 }
 ```
 
 **Response (201):**
 ```json
 {
-  "id": "seller_01JABCDEF123",
-  "customer_id": "cus_01JXYZ789",
-  "handle": "rajesh_jewelers",
-  "store_name": "Rajesh Jewelers",
-  "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg",
-  "razorpay_account_id": "ra_connect_rajesh_001",
-  "seller_trust": "untrusted",
-  "seller_category": "other",
-  "social_media_handle": "@rajeshjewelers",
-  "bio": "Family jeweler reselling authenticated pieces.",
-  "verification_status": "PENDING",
-  "created_at": "2026-01-15T10:30:00Z",
-  "updated_at": "2026-01-15T10:30:00Z"
+  "seller": {
+    "id": "01M5SVK...",
+    "customer_id": "cus_01M5...",
+    "handle": "rajesh_jewelers",
+    "store_name": "Rajesh Jewelers",
+    "avatar_url": "https://cdn.pawnpawn.com/avatars/rajesh.jpg",
+    "razorpay_account_id": null,
+    "seller_trust": "untrusted",
+    "seller_category": "other",
+    "social_media_handle": null,
+    "bio": null,
+    "verification_status": "PENDING",
+    "is_deactivated": false,
+    "created_at": "2026-10-26T10:30:00.000Z",
+    "updated_at": "2026-10-26T10:30:00.000Z",
+    "deleted_at": null
+  }
 }
 ```
 
-### 6.3 Create Product (Fixed Price)
+### 6.3 Create a Listing (Implemented)
 
-> **Status: PLANNED** — custom `POST /store/products` is not implemented. Use the Medusa Admin API or a seed script until the seller listing route exists.
+> **Status: IMPLEMENTED** — sellers create listings through `POST /store/seller/listings` (requires an authenticated, onboarded seller). The route creates a draft Medusa product with a single inventory-managed variant and a `Listing` row in `PENDING_APPROVAL`. Direct `POST /store/products` is **Planned**; use the seller listing route until then.
 
 **Request:**
 ```http
-POST /store/products
-Authorization: Bearer <jwt_token>
+POST /store/seller/listings
+Authorization: Bearer <seller_token>
 Content-Type: application/json
 
 {
   "title": "Vintage Gold Watch",
   "description": "1980s Rolex Submariner, excellent condition",
+  "price": 2500.00,
+  "condition": "excellent",
   "listing_type": "FIXED_PRICE",
-  "price": 2500.00
+  "currency_code": "usd",
+  "images": ["https://cdn.pawnpawn.com/listings/vintage-watch.jpg"]
 }
 ```
 
 **Response (201):**
 ```json
 {
-  "id": "prod_01JABCDEF123",
-  "title": "Vintage Gold Watch",
-  "description": "1980s Rolex Submariner, excellent condition",
-  "listing_type": "FIXED_PRICE",
-  "price": 2500.00,
-  "seller_id": "seller_01JABCDEF123",
-  "created_at": "2026-01-15T11:00:00Z"
+  "listing": {
+    "id": "listing_01M...",
+    "seller_id": "01M5SVK...",
+    "product_id": "prod_01M...",
+    "listing_status": "PENDING_APPROVAL",
+    "listing_type": "FIXED_PRICE",
+    "item_condition": "excellent",
+    "rejection_feedback": null,
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-10-26T11:00:00.000Z",
+    "updated_at": "2026-10-26T11:00:00.000Z"
+  },
+  "product": {
+    "id": "prod_01M...",
+    "title": "Vintage Gold Watch",
+    "status": "draft"
+  }
 }
 ```
 
 ### 6.4 Purchase Product
 
-> **Status: PLANNED** — `/store/purchase` is not implemented. Lineage is currently recorded with `lineageService.recordTransfer(...)` or SQL.
+> **Status: PLANNED** — `/store/purchase` is not implemented. When an order is placed through Medusa's core checkout, the `order.placed` subscriber marks the listing `SOLD`, creates an `hq_fulfillment` per line item, and records a lineage transfer. Lineage is currently recorded with `lineageService.recordTransfer(...)` or SQL.
 
 **Request:**
 ```http
@@ -1368,6 +1692,95 @@ Authorization: Bearer <admin_token>
     "is_deactivated": true,
     ...
   }
+}
+```
+
+### 6.8 Review a Listing (Working Today)
+
+> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` approves (publishes the product) or returns a listing with feedback.
+
+```http
+POST /admin/listings/listing_01M.../review
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "action": "APPROVE"
+}
+```
+
+```http
+POST /admin/listings/listing_01M.../review
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "action": "RETURN",
+  "feedback": "Missing certificate of authenticity"
+}
+```
+
+**Response (200):**
+```json
+{
+  "listing": {
+    "id": "listing_01M...",
+    "listing_status": "LISTED",
+    "reviewed_by": "01M5ADMIN...",
+    "reviewed_at": "2026-10-26T12:00:00.000Z",
+    "rejection_feedback": null
+  }
+}
+```
+
+### 6.9 Advance an HQ Fulfillment (Working Today)
+
+> **Status: IMPLEMENTED** — `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment through its lifecycle. Passing `certificate_url` stores the authenticity certificate; reaching `DELIVERED` releases payout.
+
+```http
+POST /admin/hq-fulfillments/hq_01M.../review
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+
+{
+  "action": "AUTHENTICATE_AND_PACK",
+  "certificate_url": "https://cdn.pawnpawn.com/certificates/hq_01M....pdf"
+}
+```
+
+Valid actions: `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, `MARK_DELIVERED`.
+
+**Response (200):**
+```json
+{
+  "fulfillment": {
+    "id": "hq_01M...",
+    "hq_status": "AUTHENTICATED_AND_PACKED",
+    "certificate_url": "https://cdn.pawnpawn.com/certificates/hq_01M....pdf",
+    "payout_released_at": null
+  }
+}
+```
+
+### 6.10 Public Seller Profile (Working Today)
+
+> **Status: IMPLEMENTED** — `GET /store/sellers/:handle` returns a seller's public profile and their published listings.
+
+```bash
+curl -s "http://localhost:9000/store/sellers/snoopdogg"
+```
+
+**Response (200):**
+```json
+{
+  "seller": {
+    "id": "01M5...",
+    "handle": "snoopdogg",
+    "store_name": "Snoop Dogg Shop",
+    "avatar_url": "https://picsum.photos/seed/snoopdogg/400/400",
+    "bio": "Legendary rapper and entrepreneur."
+  },
+  "products": [ { "id": "prod_snoop_001", "title": "Snoop Dogg Platinum Chain", ... } ]
 }
 ```
 

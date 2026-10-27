@@ -55,15 +55,26 @@ Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backen
 │   │       │   │   ├── index.ts  # Module("seller", { service: SellerModuleService })
 │   │       │   │   ├── models/seller.ts  # Seller data model
 │   │       │   │   └── service.ts # SellerModuleService: findByHandle, verifySeller, updateRazorpayAccount, findTrustedSellers, findSellersByCategory, updateTrustStatus, updateCategory, updateSocialMedia, updateBio
-│   │       │   └── lineage/      # Custom Product Lineage module
-│   │       │       ├── index.ts  # Module("lineage", { service: LineageModuleService })
-│   │       │       ├── models/product-lineage.ts  # ProductLineage data model
-│   │       │       └── service.ts # LineageModuleService with recordTransfer, getLineageHistory, getCurrentOwner
+│   │       │   ├── lineage/      # Custom Product Lineage module
+│   │       │   │   ├── index.ts  # Module("lineage", { service: LineageModuleService })
+│   │       │   │   ├── models/product-lineage.ts  # ProductLineage data model
+│   │       │   │   └── service.ts # LineageModuleService with recordTransfer, getLineageHistory, getCurrentOwner
+│   │       │   ├── listing/      # Custom Listing module (seller product listings + review)
+│   │       │   │   ├── index.ts  # Module("listing", { service: ListingModuleService })
+│   │       │   │   ├── models/listing.ts  # Listing data model
+│   │       │   │   └── service.ts # ListingModuleService: reviewListing
+│   │       │   └── hq-fulfillment/ # Custom HQ Fulfillment module (per-order-line fulfillment)
+│   │       │       ├── index.ts  # Module("hq_fulfillment", { service: HqFulfillmentModuleService })
+│   │       │       ├── models/hq-fulfillment.ts  # HqFulfillment data model
+│   │       │       └── service.ts # HqFulfillmentModuleService
 │   │       ├── scripts/          # medusa exec scripts (e.g. seed-demo-products.ts)
 │   │       │   ├── import-sql.ts  # SQL schema import runner (npm run db:import)
 │   │       │   └── verify-sample-data.ts  # Round-trip check for seller + lineage modules
-│   │       ├── search/           # Product search index definition
-│   │       ├── subscribers/      # Event subscribers
+│   │       ├── api/              # API routes: api/store/*, api/admin/* (file-based) + middlewares.ts
+│   │       │                     # GET/POST /admin/seller + GET/PATCH/DELETE /admin/seller/:id are implemented
+│   │       │                     # GET/POST /store/seller/listings, POST /store/seller/onboard, GET /store/sellers/:handle
+│   │       │                     # GET /admin/listings, POST /admin/listings/:id/review, POST /admin/hq-fulfillments/:id
+│   │       ├── subscribers/      # Event subscribers (order.placed -> HQ fulfillment + lineage)
 │   │       └── workflows/        # Workflows and workflow steps
 │   └── storefront/               # OPTIONAL Next.js storefront (@dtc/storefront)
 │       └── src/
@@ -238,6 +249,8 @@ claude mcp add --transport http medusa-cloud https://cloud.medusajs.com/mcp # or
 
 ## Conventions
 
+Read [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record) before modifying marketplace behavior. Use the Listing module for seller-to-product assignment and approval state; do not introduce a second mapping. Keep `seller.is_deactivated` non-destructive. Model HQ fulfillment per order line so mixed-seller carts remain independently trackable.
+
 - **Backend routing is file-based.** A store endpoint is `src/api/store/<path>/route.ts` exporting `GET`/`POST`/etc. Don't add a router or register routes manually.
 - **Business logic belongs in workflows**, not in route handlers. Routes resolve and run a workflow; workflows compose steps.
 - **Mutate commerce data through `core-flows` workflows**, not raw module service calls, so links, events, and inventory stay consistent.
@@ -257,7 +270,7 @@ claude mcp add --transport http medusa-cloud https://cloud.medusajs.com/mcp # or
 - Calling `this.list()` / `this.create()` / `this.update()` inside a `MedusaService` subclass. Generated methods are model-suffixed: `listSellers`, `createSellers`, `updateSellers`, `listProductLineages`, etc.
 - Resolving custom modules as `sellerModuleService` / `lineageModuleService`. Use `container.resolve("seller")` / `container.resolve("lineage")`.
 - Defining custom module table IDs as `UUID`. Medusa generates text IDs, so use `TEXT PRIMARY KEY`; also add `created_at`, `updated_at`, and `deleted_at`.
-- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/admin/custom/route.ts`, and the admin seller CRUD (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `/store/seller/*`, `/store/purchase`, or `/admin/lineage*`.
+- Assuming all custom PawnPawn routes exist. Only `src/api/store/custom/route.ts`, `src/api/admin/custom/route.ts`, the admin seller CRUD (`src/api/admin/seller/route.ts`, `src/api/admin/seller/[id]/route.ts`), the store seller routes (`src/api/store/seller/onboard/route.ts`, `src/api/store/seller/listings/route.ts`, `src/api/store/seller/listings/[id]/route.ts`, `src/api/store/sellers/[handle]/route.ts`), the admin listing/HQ routes (`src/api/admin/listings/route.ts`, `src/api/admin/listings/[id]/review/route.ts`, `src/api/admin/seller/[id]/listings/route.ts`, `src/api/admin/hq-fulfillments/[id]/route.ts`) exist today. Check the implementation-status table in `API.md` before calling `PATCH /store/seller/me`, `POST/PATCH /store/products`, `/store/purchase`, `/store/products/:id/lineage`, or `/admin/lineage*`.
 - Seeding buyers with raw `INSERT INTO customer` while expecting them to log in. Register them through `POST /auth/customer/emailpass/register` and `POST /store/customers` so auth identities are created.
 
 ## Off-Limits
@@ -310,6 +323,8 @@ module.exports = {
     // Custom PawnPawn modules:
     seller: { resolve: './src/modules/seller' },
     lineage: { resolve: './src/modules/lineage' },
+    listing: { resolve: './src/modules/listing' },
+    hq_fulfillment: { resolve: './src/modules/hq-fulfillment' },
   },
 }
 ```

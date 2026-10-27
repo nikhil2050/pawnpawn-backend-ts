@@ -234,6 +234,46 @@ CREATE INDEX IF NOT EXISTS idx_product_lineage_buyer ON product_lineage(buyer_id
 -- Index on transacted_at for time-based queries (e.g., sales this month)
 CREATE INDEX IF NOT EXISTS idx_product_lineage_transacted ON product_lineage(transacted_at);
 
+-- Marketplace listing lifecycle. Product data stays managed by Medusa; this
+-- table owns seller assignment, review state and marketplace-only attributes.
+CREATE TABLE IF NOT EXISTS listing (
+    id TEXT PRIMARY KEY,
+    seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
+    product_id TEXT NOT NULL UNIQUE REFERENCES product(id) ON DELETE RESTRICT,
+    listing_status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL'
+      CHECK (listing_status IN ('PENDING_APPROVAL', 'LISTED', 'SOLD', 'REJECTED')),
+    listing_type TEXT NOT NULL DEFAULT 'FIXED_PRICE'
+      CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
+    item_condition TEXT,
+    rejection_feedback TEXT,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_listing_seller_status ON listing(seller_id, listing_status);
+
+-- One HQ record per purchased order line so mixed-seller carts can progress
+-- independently through authentication, delivery and payout release.
+CREATE TABLE IF NOT EXISTS hq_fulfillment (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    order_line_item_id TEXT NOT NULL UNIQUE,
+    listing_id TEXT NOT NULL REFERENCES listing(id) ON DELETE RESTRICT,
+    product_id TEXT NOT NULL REFERENCES product(id) ON DELETE RESTRICT,
+    seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
+    buyer_id TEXT,
+    hq_status TEXT NOT NULL DEFAULT 'WAITING_FOR_ARRIVAL'
+      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED')),
+    certificate_url TEXT,
+    payout_released_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_hq_fulfillment_seller_status ON hq_fulfillment(seller_id, hq_status);
+
 -- Add soft-delete column for Medusa's generated queries (idempotent)
 DO $$ BEGIN
     ALTER TABLE product_lineage ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

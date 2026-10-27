@@ -14,14 +14,16 @@ Index for all project documentation. The backend is a Medusa v2.22.0 service in 
 | [`DB_MIGRATE_WORKAROUND.md`](./DB_MIGRATE_WORKAROUND.md) | Why `medusa-config.js` is plain CJS and how to migrate/import schema |
 | [`AGENTS.md`](./AGENTS.md) | Agent/contributor rules, conventions, common mistakes, off-limits paths |
 | [`CLAUDE.md`](./CLAUDE.md) | Pointer to `AGENTS.md` |
+| [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record) | Resolved celebrity-to-fan workflow, data ownership, APIs, and follow-up decisions |
 
 ## Current Status (Oct 2026)
 
 - Medusa core routes work: auth (`/auth/*`), store catalog (`GET /store/products`), store customers, admin core.
-- Custom modules work: `container.resolve("seller")` and `container.resolve("lineage")`.
+- Custom modules work: `container.resolve("seller")`, `container.resolve("lineage")`, `container.resolve("listing")`, `container.resolve("hq_fulfillment")`.
 - Seller data is fully manageable through the admin API (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`) and a **Sellers** page at `http://localhost:9000/app/sellers`.
-- Custom storefront routes are **planned**: seller onboarding, seller listings, auctions, purchase, lineage, and `/admin/lineage*`. See [`API.md`](./API.md#current-implementation-status).
-- Database and seed data are verified: 7 sellers, 5 buyers, 17 products, 33 variants, 72 prices, 8 lineage records.
+- Seller onboarding, seller listing CRUD, admin listing review, and HQ fulfillment transitions are implemented (`POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`, `GET /store/sellers/:handle`, `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`).
+- Custom storefront routes are **planned**: `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, purchase, lineage, and `/admin/lineage*`. See [`API.md`](./API.md#current-implementation-status).
+- Database and seed data are verified: 8 sellers, 5 buyers, 17 products (13 published marketplace products), 33 variants, 72 prices, 13 listings, 35 inventory items/levels, and 8 lineage records.
 
 ## Quick Start
 

@@ -1,5 +1,7 @@
 # Custom subscribers
 
+Subscribers maintain cross-module marketplace synchronization described in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record), including seller metadata sync and order-to-HQ creation.
+
 Subscribers handle events emitted in the Medusa application.
 
 > Learn more about Subscribers in [this documentation](https://docs.medusajs.com/learn/fundamentals/events-and-subscribers).

@@ -1,5 +1,7 @@
 # Custom scheduled jobs
 
+Scheduled marketplace jobs must not bypass Listing approval, HQ fulfillment, lineage, or payout state defined in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record).
+
 A scheduled job is a function executed at a specified interval of time in the background of your Medusa application.
 
 > Learn more about scheduled jobs in [this documentation](https://docs.medusajs.com/learn/fundamentals/scheduled-jobs).

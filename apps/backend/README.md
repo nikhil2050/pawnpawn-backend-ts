@@ -1,5 +1,7 @@
 > PawnPawn project docs: [`documentation/`](../../documentation/README.md). This README is Medusa scaffolding.
 
+For the current celebrity-to-fan marketplace design, read [`AI_CONTEXT.md`](../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record) before changing seller, listing, inventory, order, or HQ fulfillment behavior.
+
 <p align="center">
   <a href="https://www.medusajs.com">
   <picture>

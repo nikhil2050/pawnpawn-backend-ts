@@ -1,5 +1,7 @@
 # Module Links
 
+Use the Listing module as the authoritative seller-to-product relationship; see the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record).
+
 A module link forms an association between two data models of different modules, while maintaining module isolation.
 
 > Learn more about links in [this documentation](https://docs.medusajs.com/learn/fundamentals/module-links)

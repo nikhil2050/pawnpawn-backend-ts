@@ -1,5 +1,7 @@
 # Custom Module
 
+PawnPawn marketplace modules and their ownership boundaries are documented in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record).
+
 A module is a package of reusable functionalities. It can be integrated into your Medusa application without affecting the overall system. You can create a module as part of a plugin.
 
 > Learn more about modules in [this documentation](https://docs.medusajs.com/learn/fundamentals/modules).

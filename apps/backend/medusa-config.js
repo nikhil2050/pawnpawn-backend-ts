@@ -160,5 +160,7 @@ module.exports = {
     lineage: {
       resolve: './src/modules/lineage',
     },
+    listing: { resolve: './src/modules/listing' },
+    hq_fulfillment: { resolve: './src/modules/hq-fulfillment' },
   },
 }

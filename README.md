@@ -6,6 +6,7 @@ Medusa v2 backend for the PawnPawn peer-to-peer memorabilia marketplace.
 - API + implementation status: [`documentation/API.md`](./documentation/API.md)
 - Sample data and credentials: [`documentation/SAMPLE_DATA.md`](./documentation/SAMPLE_DATA.md)
 - Local setup: [`documentation/LOCAL_DEPLOYMENT.md`](./documentation/LOCAL_DEPLOYMENT.md)
+- Marketplace architecture and resolved design decisions: [`documentation/AI_CONTEXT.md`](./documentation/AI_CONTEXT.md#marketplace-architecture-decision-record)
 
 ---
 

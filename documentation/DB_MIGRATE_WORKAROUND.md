@@ -60,7 +60,7 @@ psql -h localhost -U postgres -d pawnpawn_db -c "\dt"
 
 You should see Medusa tables: `product`, `cart`, `order`, `customer`, `address`, `user`, `api_key`, etc.
 
-### Step 3: Import your custom schema (seller, product_lineage, listing_type)
+### Step 3: Import your custom schema (seller, product_lineage, listing_type, listing, hq_fulfillment)
 
 ```bash
 npm run db:import
@@ -104,7 +104,7 @@ Look for: `listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE'`
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 ```
 
-This loads 7 sellers (6 trusted celebrities + 1 buyer-turned-seller), links `sarah_resells` to Sarah Johnson's customer account, and creates 17 listings with provenance metadata and 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md).
+This loads 8 sellers (7 marketplace sellers plus the existing platform seller), links `sarah_resells` to Sarah Johnson's customer account, creates 13 normalized seller Listings, stocks one inventory unit per marketplace variant, and preserves 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) and the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record).
 
 Verify the modules against it:
 
@@ -244,7 +244,7 @@ Without `defineConfig`, these default modules are NOT registered automatically, 
 - [ ] `medusa-config.js` exists with `require('dotenv')` and plain `module.exports`
 - [ ] No `medusa-config.ts` exists (a stale `.ts` config breaks `medusa build`)
 - [ ] `.env` exists with correct `DATABASE_URL`
-- [ ] `npm run db:import` completed (custom schema: seller, product_lineage, listing_type)
+- [ ] `npm run db:import` completed (custom schema: seller, product_lineage, listing_type, listing, hq_fulfillment)
 - [ ] Optional: sample data seeded (`psql ... -f sql/sample-data.sql`)
 - [ ] Optional: `medusa exec ./src/scripts/verify-sample-data.ts` passes
 - [ ] `../../node_modules/.bin/medusa db:migrate` ran (schema created; migration scripts error is expected and non-fatal)

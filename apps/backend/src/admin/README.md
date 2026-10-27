@@ -1,5 +1,7 @@
 # Admin Customizations
 
+Marketplace-specific Admin behavior follows the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record); seller/listing review and HQ inspection are separate from generic Medusa widgets.
+
 You can extend the Medusa Admin to add widgets and new pages. Your customizations interact with API routes to provide merchants with custom functionalities.
 
 > Learn more about Admin Extensions in [this documentation](https://docs.medusajs.com/learn/fundamentals/admin).

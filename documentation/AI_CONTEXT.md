@@ -4,6 +4,8 @@
 > **Location**: `/documentation/AI_CONTEXT.md`
 > **Last Updated**: Oct 2026
 
+> **Canonical marketplace architecture:** Read [the Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) before changing seller, product, order, listing, lineage, inventory, or HQ fulfillment behavior. It records the resolved design questions from the architecture review.
+
 ---
 
 ## 🎯 Project Overview
@@ -16,9 +18,11 @@
 | Concept | Description |
 |---------|-------------|
 | **Seller** | Marketplace vendor with verification status, Razorpay Connect account, trust level (`trusted`/`untrusted`), and category (`celebrity`, `influencer`, `musician`, `athlete`, `other`) |
+| **Listing** | A seller's product listing with lifecycle (`PENDING_APPROVAL` → `LISTED`/`SOLD`/`REJECTED`), `listing_type` (`FIXED_PRICE`/`AUCTION`), and condition |
 | **Product** | Items listed for sale - either FIXED_PRICE or AUCTION |
 | **Product Lineage** | Complete ownership chain: seller → buyer → buyer → ... |
-| **Purchase** | Transaction creating a lineage entry and transferring ownership (lineage module implemented; `/store/purchase` route planned) |
+| **HQ Fulfillment** | One record per purchased order line, progressing `WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED` → `DISPATCHED` → `DELIVERED`, with authenticity certificate and payout release |
+| **Purchase** | Transaction creating a lineage entry and transferring ownership (handled by the `order.placed` subscriber) |
 
 ---
 
@@ -106,25 +110,41 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
         │       │   │   │   ├── index.ts         # Module("seller", { service: SellerModuleService })
         │       │   │   │   ├── models/seller.ts # Seller data model
         │       │   │   │   └── service.ts       # SellerModuleService (findByHandle, verifySeller, updateRazorpayAccount, findTrustedSellers, findSellersByCategory, updateTrustStatus, updateCategory, updateSocialMedia, updateBio)
-        │       │   │   └── lineage/
-        │       │   │       ├── index.ts         # Module("lineage", { service: LineageModuleService })
-        │       │   │       ├── models/product-lineage.ts  # ProductLineage data model
-        │       │   │       └── service.ts       # LineageModuleService (recordTransfer, getLineageHistory, getCurrentOwner)
+        │       │   │   ├── lineage/
+        │       │   │   │   ├── index.ts         # Module("lineage", { service: LineageModuleService })
+        │       │   │   │   ├── models/product-lineage.ts  # ProductLineage data model
+        │       │   │   │   └── service.ts       # LineageModuleService (recordTransfer, getLineageHistory, getCurrentOwner)
+        │       │   │   ├── listing/
+        │       │   │   │   ├── index.ts         # Module("listing", { service: ListingModuleService })
+        │       │   │   │   ├── models/listing.ts # Listing data model
+        │       │   │   │   └── service.ts       # ListingModuleService (reviewListing)
+        │       │   │   └── hq-fulfillment/
+        │       │   │       ├── index.ts         # Module("hq_fulfillment", { service: HqFulfillmentModuleService })
+        │       │   │       ├── models/hq-fulfillment.ts  # HqFulfillment data model
+        │       │   │       └── service.ts       # HqFulfillmentModuleService
         │       │   ├── scripts/
         │       │   │   ├── import-sql.ts        # SQL runner (npm run db:import)
         │       │   │   └── verify-sample-data.ts # Round-trip seller/lineage verification
         │       │   ├── api/
         │       │   │   ├── store/custom/route.ts # Placeholder only (no PawnPawn store routes yet)
+        │       │   │   ├── store/seller/onboard/route.ts          # POST /store/seller/onboard
+        │       │   │   ├── store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
+        │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
+        │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
         │       │   │   ├── admin/custom/route.ts # Placeholder only
-        │       │   │   ├── admin/seller/route.ts # GET /admin/seller (list/filter/paginate)
-        │       │   │   ├── admin/seller/[id]/route.ts # GET /admin/seller/:id
-        │       │   │   └── middlewares.ts       # Store search middleware (configureStoreSearch)
+        │       │   │   ├── admin/seller/route.ts # GET/POST /admin/seller
+        │       │   │   ├── admin/seller/[id]/route.ts # GET/PATCH/DELETE /admin/seller/:id
+        │       │   │   ├── admin/seller/[id]/listings/route.ts # GET /admin/seller/:id/listings
+        │       │   │   ├── admin/listings/route.ts # GET /admin/listings
+        │       │   │   ├── admin/listings/[id]/review/route.ts # POST /admin/listings/:id/review
+        │       │   │   ├── admin/hq-fulfillments/[id]/route.ts # POST /admin/hq-fulfillments/:id
+        │       │   │   └── middlewares.ts       # Store search + customer auth (configureStoreSearch, authenticate)
         │       │   ├── admin/
         │       │   │   └── routes/sellers/page.tsx # Sellers page in Medusa Admin (/app/sellers)
         │       │   ├── jobs/                    # Scheduled jobs
         │       │   ├── links/                   # Module links
         │       │   ├── search/                  # Product search index definition
-        │       │   ├── subscribers/             # Event subscribers
+        │       │   ├── subscribers/             # Event subscribers (order.placed -> HQ fulfillment + lineage)
         │       │   └── workflows/               # Business logic workflows
         │       ├── README.md                    # Medusa default
         │       └── node_modules/                # Installed (1362 packages)
@@ -133,6 +153,64 @@ If you're coming from a Java/Spring Boot background, here's a quick mapping:
 ---
 
 ## 🗄️ Database Schema
+
+### Marketplace architecture summary
+
+Seller identity is a Medusa Customer identity plus one Seller profile. Product ownership is normalized in the Listing module (`seller_id` + `product_id`), while product metadata keeps seller display fields for compatibility. Listings move through `PENDING_APPROVAL → LISTED → SOLD` or `REJECTED`; seller edits resubmit a rejected listing. Mixed-seller carts are supported, so HQ fulfillment is per order line. Payout release occurs after delivery. See the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record) for the full decision record and follow-up work.
+
+## Marketplace Architecture Decision Record
+
+PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit unique memorabilia, admins review it, fans purchase it, and every sold item travels through PawnPawn HQ for authenticity checks, certificate generation, repackaging, and dispatch.
+
+### Decisions from architecture review
+
+- A celebrity seller uses the same Medusa Customer identity as a buyer. A Customer can have at most one Seller profile and can still purchase as a fan.
+- A seller can own many products. The normalized relationship is `listing.seller_id -> listing.product_id`; product metadata fields `seller_id`, `seller_handle`, and `seller_name` are denormalized compatibility fields.
+- The Listing module owns marketplace state: `PENDING_APPROVAL`, `LISTED`, `SOLD`, or `REJECTED`. Medusa Product remains the commerce/catalog primitive.
+- Seller reassignment on resale changes the current Listing seller. `product_lineage` preserves the original seller and every prior owner.
+- Rejection is decided per listing. An admin may return an item with feedback for seller edits, or correct the listing and approve it. Both actions must be auditable.
+- One buyer cart may contain products from multiple sellers. HQ fulfillment is therefore one record per order line/listing, never one record per order.
+- HQ state progresses through `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, and `DELIVERED`.
+- Seller payout is released after buyer delivery. Payment capture, payout, and dispute handling remain separate from listing approval.
+- Inactivation sets `seller.is_deactivated = true`; it never permanently deletes a seller.
+
+### Questions resolved during review
+
+| Question | Decision |
+|---|---|
+| Should a seller use a separate identity? | No. Use the same Medusa Customer identity so a celebrity can also buy as a fan. |
+| What happens when a listing is rejected? | The seller may edit and resubmit; an admin may also correct it before approval. The decision is per listing and auditable. |
+| Should seller assignment live in product metadata, product columns, or a module? | Use a dedicated Listing module; metadata is only denormalized display/search data. |
+| Can a buyer purchase from multiple celebrities in one cart? | Yes. Track HQ fulfillment independently per order line/listing. |
+| When is payout released? | After buyer delivery, with a future Razorpay adapter and idempotency protection. |
+| Should inactivation delete seller records? | No. Set `is_deactivated` and retain the seller, listings, and history. |
+
+### Data ownership
+
+| Concern | Source of truth |
+|---|---|
+| Seller profile and verification | Seller module |
+| Product title, variants, prices, inventory | Medusa Product/Inventory modules |
+| Seller-to-product assignment and approval | Listing module |
+| Prior ownership and resale history | Product Lineage module |
+| HQ receipt, authentication, dispatch | HQ Fulfillment module |
+| Buyer, order, payment, delivery | Medusa Customer/Order/Fulfillment modules |
+
+### Implemented backend surface
+
+- Seller: `POST /store/seller/onboard`, `GET/POST /store/seller/listings`, `PATCH /store/seller/listings/:id`.
+- Public seller: `GET /store/sellers/:handle`.
+- Admin listings: `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`.
+- HQ operations: `POST /admin/hq-fulfillments/:id` with `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, or `MARK_DELIVERED`.
+- `order.placed` creates HQ records, marks matching listed items sold, and records lineage.
+
+### Known follow-up work
+
+- Wire the separate buyer and seller Next.js applications to these APIs.
+- Add a dedicated Admin listings/product view with seller, buyer, listing state, and HQ state.
+- Replace the payout timestamp with a Razorpay payout adapter and idempotency keys.
+- Add certificate generation/storage and delivery, return, and dispute workflows.
+- Add integration tests for seller authorization, mixed-seller carts, listing review, HQ transitions, and payout release.
 
 ### Custom Tables (Defined in `sql/schema.sql`)
 
@@ -175,7 +253,55 @@ CREATE TABLE product_lineage (
 
 > IDs are `TEXT`, not `UUID`, because Medusa generates text IDs. Treat them as opaque: service-created rows get ULID-like values, while seed rows may use `seller_*` / `lineage_*` or UUID-shaped text depending on when the DB was first seeded. `created_at`, `updated_at`, and `deleted_at` are required by Medusa's generated service queries.
 
-#### 3. `product` Table Extension
+#### 3. `listing` Table
+
+Marketplace listing lifecycle. Product data stays managed by Medusa; this table owns seller assignment, review state and marketplace-only attributes.
+
+```sql
+CREATE TABLE listing (
+    id TEXT PRIMARY KEY,
+    seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
+    product_id TEXT NOT NULL UNIQUE REFERENCES product(id) ON DELETE RESTRICT,
+    listing_status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL'
+      CHECK (listing_status IN ('PENDING_APPROVAL', 'LISTED', 'SOLD', 'REJECTED')),
+    listing_type TEXT NOT NULL DEFAULT 'FIXED_PRICE'
+      CHECK (listing_type IN ('FIXED_PRICE', 'AUCTION')),
+    item_condition TEXT,
+    rejection_feedback TEXT,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_listing_seller_status ON listing(seller_id, listing_status);
+```
+
+#### 4. `hq_fulfillment` Table
+
+One HQ record per purchased order line so mixed-seller carts can progress independently through authentication, delivery and payout release.
+
+```sql
+CREATE TABLE hq_fulfillment (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    order_line_item_id TEXT NOT NULL UNIQUE,
+    listing_id TEXT NOT NULL REFERENCES listing(id) ON DELETE RESTRICT,
+    product_id TEXT NOT NULL REFERENCES product(id) ON DELETE RESTRICT,
+    seller_id TEXT NOT NULL REFERENCES seller(id) ON DELETE RESTRICT,
+    buyer_id TEXT,
+    hq_status TEXT NOT NULL DEFAULT 'WAITING_FOR_ARRIVAL'
+      CHECK (hq_status IN ('WAITING_FOR_ARRIVAL', 'ARRIVED_AT_HQ', 'AUTHENTICATED_AND_PACKED', 'DISPATCHED', 'DELIVERED')),
+    certificate_url TEXT,
+    payout_released_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_hq_fulfillment_seller_status ON hq_fulfillment(seller_id, hq_status);
+```
+
+#### 5. `product` Table Extension
 ```sql
 ALTER TABLE product 
 ADD COLUMN listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE';
@@ -187,8 +313,10 @@ ADD COLUMN listing_type product_listing_type NOT NULL DEFAULT 'FIXED_PRICE';
 |-----------|--------|---------|
 | `seller_verification_status` | `PENDING`, `VERIFIED` | `seller.verification_status` |
 | `product_listing_type` | `FIXED_PRICE`, `AUCTION` | `product.listing_type` |
+| `listing_status` | `PENDING_APPROVAL`, `LISTED`, `SOLD`, `REJECTED` | `listing.listing_status` |
+| `hq_status` | `WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED` | `hq_fulfillment.hq_status` |
 
-> `seller.seller_trust` and `seller.seller_category` are **VARCHAR with defaults**, not PostgreSQL enums, so new categories can be added without a migration. Application-level values are documented in `SAMPLE_DATA.md`.
+> `seller.seller_trust`, `seller.seller_category`, and `listing.listing_type` are **VARCHAR with defaults**, not PostgreSQL enums, so new values can be added without a migration. Application-level values are documented in `SAMPLE_DATA.md`.
 
 ### Helper Views
 | View | Purpose |
@@ -260,11 +388,13 @@ module.exports = {
     // Custom PawnPawn modules:
     seller: { resolve: './src/modules/seller' },
     lineage: { resolve: './src/modules/lineage' },
+    listing: { resolve: './src/modules/listing' },
+    hq_fulfillment: { resolve: './src/modules/hq-fulfillment' },
   },
 }
 ```
 
-**Intentionally excluded modules:** `rbac` and `workflow-engine-inmemory` are not registered — enabling them causes license/shared-container failures in this setup. Registering modules as an array or with hyphenated keys also breaks loading; `modules` must be an object keyed by valid names (`api_key`, `seller`, `lineage`, ...).
+**Intentionally excluded modules:** `rbac` and `workflow-engine-inmemory` are not registered — enabling them causes license/shared-container failures in this setup. Registering modules as an array or with hyphenated keys also breaks loading; `modules` must be an object keyed by valid names (`api_key`, `seller`, `lineage`, `listing`, `hq_fulfillment`, ...).
 
 ### Environment Variables (`.env`)
 ```bash
@@ -359,7 +489,7 @@ npm run db:import
 ../../node_modules/.bin/medusa exec ./src/scripts/seed-demo-products.ts
 ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
 
-# Load PawnPawn sample data (7 sellers, 5 buyers, 17 listings, lineage)
+# Load PawnPawn sample data (8 sellers, 5 buyers, 13 seller-mapped listings, inventory, lineage)
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 ```
 
@@ -371,7 +501,7 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-da
 
 ## 🔄 Core Workflows
 
-> **Status note:** Medusa core routes and the custom module services exist. Admin seller reads (`GET /admin/seller`, `/admin/seller/:id`) and the **Sellers** admin page are implemented; storefront seller/purchase/lineage routes and admin mutations remain planned. See `API.md` → Current Implementation Status.
+> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id`), admin listing review, HQ fulfillment transitions, seller onboarding, seller listings, and the **Sellers** admin page are implemented. `PATCH /store/seller/me`, custom `POST/PATCH /store/products`, auctions, `/store/purchase`, `/store/products/:id/lineage`, and `/admin/lineage*` remain planned. See `API.md` → Current Implementation Status.
 
 ### 1. Admin Login (Implemented)
 ```
@@ -388,25 +518,35 @@ POST /store/customers                   → customer profile (needs publishable 
 POST /auth/customer/emailpass           → login, returns token
 ```
 
-### 3. Seller Onboarding (Planned — service exists)
+### 3. Seller Onboarding (Implemented)
 ```
-PLANNED: POST /store/seller/onboard
-  → Body: { handle, store_name, avatar_url?, seller_trust?, seller_category? }
+IMPLEMENTED: POST /store/seller/onboard
+  → Requires authenticated customer (Bearer/session)
+  → Body: { handle, store_name, avatar_url? }
+  → Creates a seller row (trust=untrusted, category=other, verification=PENDING)
+  → 409 if a seller profile already exists for this customer
+  → 401 if not authenticated
 
 CURRENT: sellerService.createSellers({ handle, store_name, razorpay_account_id, ... })
 ```
 
-### 4. Product Listing (Core read implemented; seller write planned)
+### 4. Product Listing (Implemented via seller listings)
 ```
-IMPLEMENTED: GET /store/products, GET /store/products/:id
+IMPLEMENTED: GET /store/products, GET /store/products/:id (Medusa core)
+IMPLEMENTED: GET /store/sellers/:handle (public seller profile + listed products)
+IMPLEMENTED: GET/POST /store/seller/listings (seller listing CRUD)
+IMPLEMENTED: PATCH /store/seller/listings/:id (own listings only)
+IMPLEMENTED: GET /admin/listings, POST /admin/listings/:id/review (admin review)
 PLANNED:     POST/PATCH /store/products, auction start/bid
 ```
 
-### 5. Purchase Flow (Planned)
+### 5. Purchase Flow (Planned REST; subscriber handles orders)
 ```
 PLANNED: POST /store/purchase
   → would create order + product_lineage entry
 
+CURRENT: order.placed subscriber (src/subscribers/order-placed-hq-fulfillment.ts)
+  → marks listing SOLD, creates hq_fulfillment per line item, records lineage
 CURRENT: lineageService.recordTransfer({ product_id, seller_id?, buyer_id, price })
 ```
 
@@ -486,9 +626,21 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 ### Seller
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
-| POST | `/store/seller/onboard` | No | Register seller | Planned |
-| GET | `/store/seller/me` | Bearer/Cookie | Get seller profile | Planned |
+| POST | `/store/seller/onboard` | Bearer/Cookie (customer) | Onboard authenticated customer as seller | Implemented |
+| GET | `/store/sellers/:handle` | No | Public seller profile + listed products | Implemented |
+| GET | `/store/seller/listings` | Bearer/Cookie (customer) | Authenticated seller's listings | Implemented |
+| POST | `/store/seller/listings` | Bearer/Cookie (customer) | Create a listing (draft product + Listing) | Implemented |
+| PATCH | `/store/seller/listings/:id` | Bearer/Cookie (customer) | Update own listing | Implemented |
+| GET | `/store/seller/me` | Bearer/Cookie | Get current seller profile | Planned |
 | PATCH | `/store/seller/me` | Bearer/Cookie | Update seller profile | Planned |
+
+### Listings & HQ Fulfillment
+| Method | Endpoint | Auth | Description | Status |
+|--------|----------|------|-------------|--------|
+| GET | `/admin/listings` | Bearer | List all listings (with seller/product) | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve (publish) or return a listing | Implemented |
+| GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | Implemented |
+| POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | Implemented |
 
 ### Products
 | Method | Endpoint | Auth | Description | Status |
@@ -498,7 +650,7 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | POST | `/store/products` | Bearer/Cookie | Create listing | Planned |
 | PATCH | `/store/products/:id` | Bearer/Cookie | Update listing | Planned |
 | POST | `/store/products/:id/auction/start` | Bearer/Cookie | Start auction | Planned |
-| POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid | Planned |
+| POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | Planned |
 
 ### Purchase/Lineage
 | Method | Endpoint | Auth | Description | Status |
@@ -514,6 +666,10 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | POST | `/admin/seller` | Bearer | Create seller | Implemented |
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | Implemented |
+| GET | `/admin/listings` | Bearer | List all listings | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve/return a listing | Implemented |
+| GET | `/admin/seller/:id/listings` | Bearer | Listings + fulfillments for a seller | Implemented |
+| POST | `/admin/hq-fulfillments/:id` | Bearer | Advance HQ fulfillment | Implemented |
 | GET/POST | `/admin/lineage`, `/admin/lineage/:id` | Bearer | Lineage CRUD | Planned |
 
 ### Admin UI
@@ -524,15 +680,19 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 ### Custom Module Service Access (Implemented)
 
 ```ts
-const sellerService = container.resolve("seller")   // not "sellerModuleService"
-const lineageService = container.resolve("lineage") // not "lineageModuleService"
+const sellerService = container.resolve("seller")     // not "sellerModuleService"
+const lineageService = container.resolve("lineage")   // not "lineageModuleService"
+const listingService = container.resolve("listing")
+const hqFulfillmentService = container.resolve("hq_fulfillment")
 ```
 
 Seller methods: `findByHandle`, `verifySeller`, `updateRazorpayAccount`, `findTrustedSellers`, `findSellersByCategory`, `updateTrustStatus`, `updateCategory`, `updateSocialMedia`, `updateBio`.
 
 Lineage methods: `recordTransfer`, `getLineageHistory`, `getCurrentOwner`.
 
-Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSellers`; `listProductLineages` / `createProductLineages` / `updateProductLineages` / `deleteProductLineages`.
+Listing methods: `reviewListing(id, status, userId, feedback?)`.
+
+Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSellers`; `listProductLineages` / `createProductLineages` / `updateProductLineages` / `deleteProductLineages`; `listListings` / `retrieveListing` / `createListings` / `updateListings` / `deleteListings`; `listHqFulfillments` / `retrieveHqFulfillment` / `createHqFulfillments` / `updateHqFulfillments` / `deleteHqFulfillments`.
 
 > `MedusaService` has no generic `this.list()` / `this.update()`. `updateSellers` takes `{ id, ...fields }` or `{ selector, data }`.
 
@@ -558,8 +718,12 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 8. Test health: `curl http://localhost:9000/health`
 9. Verify modules: `../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts`
 10. Admin login: `POST /auth/user/emailpass` with `admin@pawnpawn.com` / `supersecret`
-11. Admin sellers: `GET /admin/seller` with the admin token returns 7 sellers; open `http://localhost:9000/app/sellers`
+11. Admin sellers: `GET /admin/seller` with the admin token returns 8 sellers; open `http://localhost:9000/app/sellers`
 12. Buyer login: `POST /auth/customer/emailpass` with `sarah.johnson@gmail.com` / `buyer1234`
+13. Onboard a seller: `POST /store/seller/onboard` with a customer token
+14. Create a listing: `POST /store/seller/listings` with a seller token
+15. Review a listing: `POST /admin/listings/:id/review` with an admin token
+16. Advance HQ fulfillment: `POST /admin/hq-fulfillments/:id` with an admin token
 
 ---
 
@@ -574,4 +738,4 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, custom seller/lineage modules verified, sample data seeded (7 sellers / 5 buyers / 17 products / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented, remaining custom REST routes planned*
+*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 35 inventory items / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*

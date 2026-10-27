@@ -269,11 +269,103 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
--- 5. Verification summary
+-- 5. Marketplace listings and inventory
+-- ---------------------------------------------------------------------------
+-- Each celebrity/resale product gets one Listing. Listing is the normalized
+-- seller relationship; product.metadata remains useful for storefront display.
+INSERT INTO listing
+  (id, seller_id, product_id, listing_status, listing_type, item_condition, created_at, updated_at)
+SELECT
+  'listing_' || p.id,
+  (p.metadata->>'seller_id')::text,
+  p.id,
+  'LISTED',
+  COALESCE(p.listing_type, 'FIXED_PRICE'),
+  p.metadata->>'condition',
+  NOW(), NOW()
+FROM product p
+WHERE p.metadata->>'seller_id' IS NOT NULL
+ON CONFLICT (product_id) DO UPDATE SET
+  seller_id = EXCLUDED.seller_id,
+  listing_status = EXCLUDED.listing_status,
+  listing_type = EXCLUDED.listing_type,
+  item_condition = EXCLUDED.item_condition,
+  updated_at = NOW();
+
+-- Keep the four upstream Medusa demo products available for framework checks,
+-- but hide them from the buyer marketplace until they have a real seller.
+UPDATE product
+   SET status = 'draft', updated_at = NOW()
+ WHERE metadata->>'seller_id' IS NULL
+   AND handle IN ('sweatpants', 'shorts', 'sweatshirt', 't-shirt');
+
+-- Unique memorabilia items are inventory-managed with one available unit.
+DO $$
+DECLARE
+  v_location_id TEXT;
+  r RECORD;
+  v_inventory_id TEXT;
+BEGIN
+  SELECT id INTO v_location_id
+  FROM stock_location
+  WHERE deleted_at IS NULL
+  ORDER BY id
+  LIMIT 1;
+
+  IF v_location_id IS NULL THEN
+    RAISE NOTICE 'Skipping inventory seed: no stock location exists';
+    RETURN;
+  END IF;
+
+  FOR r IN
+    SELECT pv.id AS variant_id, pv.product_id, pv.sku, pv.title AS variant_title,
+           p.title AS product_title, p.metadata->>'seller_handle' AS seller_handle
+    FROM product_variant pv
+    JOIN product p ON p.id = pv.product_id
+    WHERE p.metadata->>'seller_id' IS NOT NULL
+      AND pv.deleted_at IS NULL
+  LOOP
+    v_inventory_id := 'inv_' || r.variant_id;
+
+    INSERT INTO inventory_item
+      (id, sku, title, description, requires_shipping, metadata, created_at, updated_at)
+    VALUES
+      (v_inventory_id, COALESCE(r.sku, 'PAWN-' || r.variant_id),
+       r.product_title || ' — ' || r.variant_title,
+       'Authenticity-controlled memorabilia inventory for ' || COALESCE(r.seller_handle, 'verified seller'),
+       TRUE,
+       jsonb_build_object('product_id', r.product_id, 'seller_handle', r.seller_handle, 'unique_item', TRUE),
+       NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      title = EXCLUDED.title,
+      metadata = EXCLUDED.metadata,
+      updated_at = NOW();
+
+    INSERT INTO inventory_level
+      (id, inventory_item_id, location_id, stocked_quantity, reserved_quantity, incoming_quantity, created_at, updated_at)
+    VALUES
+      ('invlevel_' || r.variant_id, v_inventory_id, v_location_id, 1, 0, 0, NOW(), NOW())
+    ON CONFLICT (inventory_item_id, location_id) WHERE deleted_at IS NULL DO UPDATE SET
+      stocked_quantity = GREATEST(inventory_level.stocked_quantity, 1),
+      updated_at = NOW();
+
+    UPDATE product_variant
+       SET manage_inventory = TRUE,
+           allow_backorder = FALSE,
+           updated_at = NOW()
+     WHERE id = r.variant_id;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 6. Verification summary
 -- ---------------------------------------------------------------------------
 SELECT 'sellers'   AS entity, COUNT(*) FROM seller
 UNION ALL SELECT 'products',  COUNT(*) FROM product
 UNION ALL SELECT 'variants',  COUNT(*) FROM product_variant
 UNION ALL SELECT 'prices',    COUNT(*) FROM price
 UNION ALL SELECT 'customers', COUNT(*) FROM customer
-UNION ALL SELECT 'lineage',   COUNT(*) FROM product_lineage;
+UNION ALL SELECT 'lineage',   COUNT(*) FROM product_lineage
+UNION ALL SELECT 'listings',  COUNT(*) FROM listing
+UNION ALL SELECT 'inventory_items', COUNT(*) FROM inventory_item
+UNION ALL SELECT 'inventory_levels', COUNT(*) FROM inventory_level;

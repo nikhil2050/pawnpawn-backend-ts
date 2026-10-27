@@ -1,5 +1,7 @@
 # Custom Workflows
 
+Marketplace workflows must preserve the lifecycle in the [Marketplace Architecture Decision Record](../../../../documentation/AI_CONTEXT.md#marketplace-architecture-decision-record), including per-order-line HQ fulfillment and delivery-gated payout release.
+
 A workflow is a series of queries and actions that complete a task.
 
 The workflow is created in a TypeScript or JavaScript file under the `src/workflows` directory.

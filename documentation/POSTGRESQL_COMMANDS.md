@@ -1,5 +1,7 @@
 # PostgreSQL Commands Reference — PawnPawn Backend
 
+Marketplace ownership and lifecycle are defined in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record). Query `listing` for current seller/product assignment; use `product_lineage` for historical ownership and `hq_fulfillment` for HQ processing. Do not use product metadata as the authoritative relationship.
+
 > **Purpose**: Quick-reference cheat sheet for PostgreSQL operations specific to the PawnPawn marketplace backend.
 > **Location**: `/documentation/POSTGRESQL_COMMANDS.md`
 > **Database**: `pawnpawn_db`
@@ -561,4 +563,4 @@ If you're coming from Java/JDBC/Hibernate, here's a mapping:
 
 ---
 
-*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, sample data (7 sellers / 5 buyers / 17 products / 8 lineage rows).*
+*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, Listing and HQ fulfillment tables, sample data (8 sellers / 5 buyers / 17 products / 13 listings / 35 inventory levels / 8 lineage rows).*

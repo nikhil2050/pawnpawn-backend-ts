@@ -10,6 +10,19 @@
 
 ---
 
+## Agent mandate (compact source of truth)
+
+Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, PostgreSQL, and TypeScript.
+
+1. Use native `ProductCategory` for taxonomies, `ProductCollection` for campaigns, and `ProductOption`/`ProductOptionValue` for attributes.
+2. Sellers and buyers share Medusa `Customer`; each Seller links 1:1 through `customer_id`.
+3. Use custom `seller`, `listing`, `lineage`, and `hq_fulfillment` modules via Medusa utils; never alter native product tables.
+4. The `product.created` subscriber provisions Admin/API products: SKU `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`, `manage_inventory=true`, `allow_backorder=false`, quantity `1`, and an idempotent `PENDING_APPROVAL` Listing. Admin products use the system Seller fallback. Purchases set quantity to `0` while retaining SKU/history.
+5. Listing lifecycle: `PENDING_APPROVAL` → `AVAILABLE` → `SOLD`; rejection returns feedback and resubmission resets pending.
+6. Mixed carts create independent HQ fulfillment rows per order line: `WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED` → `DISPATCHED` → `DELIVERED`.
+7. MVP checkout is the placeholder `POST /store/purchase`; payout release follows delivery.
+8. Commits and code explanations use `<type>(<scope>): <short imperative description>`. Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `chore`. Scopes: `products`, `seller`, `listing`, `lineage`, `hq`, `cart`, `auth`, `admin`, `db`, `config`.
+
 ## 1. 🎯 Project Overview
 
 **PawnPawn** is a peer-to-peer marketplace platform where users can buy and sell second-hand items. The backend is built on **Medusa v2** (Node.js/TypeScript) and serves two frontend applications:
@@ -40,46 +53,6 @@
 ├── Package Manager: npm 11.12.1 (Turborepo workspace)
 └── Monorepo: Turborepo (root: /PawnPawnTS)
 ```
-
-### 2.2 🍵 Java Developer Cheat Sheet — TypeScript & Medusa Concepts
-
-If you're coming from a Java/Spring Boot background, here's a quick mapping:
-
-| Java Concept | TypeScript / Medusa Equivalent | Notes |
-|--------------|-------------------------------|-------|
-| `class` / `interface` | `interface` / `type` | TypeScript interfaces define object shapes |
-| `@Entity` + `@Table` | Medusa module model + MikroORM | Medusa manages entities internally |
-| `@Id @GeneratedValue` | `id TEXT PRIMARY KEY` (Medusa-generated) | Medusa generates text IDs, not UUIDs |
-| `@Column(unique = true)` | `VARCHAR UNIQUE` | SQL constraint |
-| `@Enumerated(EnumType.STRING)` | PostgreSQL `ENUM` type | `seller_verification_status` |
-| `@CreatedDate` / `@LastModifiedDate` | `created_at TIMESTAMPTZ DEFAULT NOW()` | Database-managed timestamps |
-| `System.getenv("KEY")` | `process.env.KEY` | Environment variables |
-| `application.properties` | `.env` / `medusa-config.js` | Configuration |
-| `@CrossOrigin(origins=...)` | `storeCors` / `adminCors` in config | CORS settings |
-| `@SpringBootApplication` | `medusa-config.js` `module.exports` | App configuration |
-| `CompletableFuture` / `@Async` | `async` / `await` | Non-blocking async I/O |
-| `System.exit(1)` | `process.exit(1)` | Terminate process |
-| `pom.xml` / `build.gradle` | `package.json` | Dependencies & scripts |
-| `mvn spring-boot:run` | `npm run dev` (`medusa develop`) | Start dev server |
-| `Flyway` / `Liquibase` migration | `sql/schema.sql` + `npm run db:import` | Raw SQL DDL |
-| `HikariDataSource` | `pg.Pool` | Connection pool |
-| `Connection` | `pg.Client` | Single DB connection |
-| `PreparedStatement.executeUpdate()` | `client.query(sql)` | Execute SQL |
-| `DTO` / `Projection` | SQL `VIEW` (e.g., `seller_stats`) | Read-only query result |
-| `@Service` + business logic | Medusa Workflows + Steps | Business logic layer |
-| `@RestController` + `@RequestMapping` | File-based routes in `src/api/store/` | API endpoints |
-| `slf4j` / `Logger` | `console.log()` / `console.error()` | Logging |
-
-**Key TypeScript syntax for Java developers:**
-- `const x = value` — immutable (like `final`)
-- `let x = value` — mutable
-- `function name(param: type): returnType {}` — typed function
-- `interface Name { prop: type }` — object shape (like a Java interface)
-- `` `string ${var}` `` — template literal (string interpolation)
-- `=>` — arrow function (like Java lambda `x -> x * 2`)
-- `null` / `undefined` — both represent "no value" (Java's `null`)
-
----
 
 ## 3. 📁 Directory Structure
 

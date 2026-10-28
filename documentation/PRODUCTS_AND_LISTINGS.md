@@ -78,3 +78,10 @@ The separate Listings **screen** is deprecated, but the Listing remains the mark
 | Purchase history and provenance | Remains permanent | Links to lineage and HQ fulfillment |
 
 The architecture keeps Medusa's Product schema unchanged. `listing.product_id` and `listing.seller_id` are the authoritative marketplace relationship; Product metadata is not used for ownership.
+
+## UX operating principles
+
+- Keep Commercial Attributes (price, SKU, inventory) visually separate from Governance Actions (seller reassignment, status, feedback, and review) in the Product detail panel.
+- Use the same status colors everywhere: 🟡 Pending approval, 🟢 Available, 🔵 Sold, 🔴 Rejected, and 🔘 Inactive.
+- The buyer frontend should present lineage as an Ownership Chain and explain per-item shipping and HQ authentication for mixed-seller carts.
+- The seller frontend should validate category, condition, and pricing immediately during listing submission.

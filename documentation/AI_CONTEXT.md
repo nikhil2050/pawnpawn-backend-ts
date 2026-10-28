@@ -972,7 +972,54 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-## 13. 📚 References
+## 13. 🗺️ Roadmap & Feature Prioritization
+
+| Phase | Priority | Epic / Focus Area | Key deliverables |
+|---|---|---|---|
+| Phase 1 (Immediate) | P0 | Production Checkout & Idempotency | Replace dummy checkout with a database-backed transaction outbox, strict inventory reservation, and payment-capture safety. |
+| Phase 2 (Near-Term) | P1 | Frontend Integration & Onboarding | Connect `pawnpawn-frontend-buyer-ts` and `pawnpawn-frontend-seller-ts` to live APIs; enable real celebrity Customer-to-Seller account linking. |
+| Phase 3 (Expansion) | P2 | HQ Operations UI & Exceptions | Build the Admin HQ exception dashboard for split dispatch, seller cancellations, automated refunds, and authenticity certificate storage. |
+| Phase 4 (Scale) | P3 | Payouts & Advanced Features | Integrate Razorpay Route for automated post-delivery payout releases and introduce auction bidding logic. |
+
+### 13.1 System Design Expert Lens: Architecture & Production Hardening
+
+Production scale requires resolving the following checkout, boundary, and reliability risks:
+
+1. **Transactional outbox for checkout**
+   - **Current risk:** The MVP `POST /store/purchase` flow and its `order.placed` processing perform several service calls—selling the Listing, locking inventory, creating HQ fulfillment, and recording lineage—without one distributed transaction boundary.
+   - **Recommendation:** Implement a database-backed outbox, or wrap the checkout workflow in Medusa transaction managers such as `withTransaction`, so a failure cannot leave inventory locked while HQ or lineage records are missing.
+
+2. **Concurrency protection for unique items**
+   - Use Medusa's `locking` module with an explicit Listing ID key during checkout. This prevents two buyers from acquiring the same one-of-one celebrity item concurrently.
+
+3. **Idempotent webhooks and event handlers**
+   - Keep `order.placed` and `product.created` handlers safe for duplicate event delivery. Enforce unique idempotency keys such as `order_line_item_id` on `product_lineage` and `hq_fulfillment`, and make retries converge to the same final state.
+
+## 13.2 UX Expert Lens: Operational Efficiency & User Experience
+
+The UX goal is zero cognitive friction for admins, high trust for buyers, and low-friction submission for celebrity sellers.
+
+### Admin dashboard (`/app/products` and `/app/sellers`)
+
+- Keep the unified Products governance panel. Separate **Commercial Attributes** (price, SKU, inventory) from **Governance Actions** (seller reassignment, status badges, feedback, and review buttons) to reduce admin input errors.
+- Preserve the status hierarchy: 🟡 `PENDING_APPROVAL`, 🟢 `AVAILABLE`, 🔵 `SOLD`, 🔴 `REJECTED`, and 🔘 `INACTIVE` (archived).
+
+### Buyer storefront (`pawnpawn-frontend-buyer-ts`)
+
+- Surface `GET /store/products/:id/lineage` as an interactive Ownership Chain timeline on product details.
+- For mixed-seller carts, show per-item shipping estimates and HQ authentication steps during checkout.
+
+### Seller app (`pawnpawn-frontend-seller-ts`)
+
+- Keep listing submission frictionless with immediate validation for category, condition, and pricing before the item enters `PENDING_APPROVAL`.
+
+### UX next steps
+
+1. Unit-test archive/restore and checkout under concurrent load.
+2. Keep the Admin **Customize layout** instructions clear for moving the governance and Variant widgets.
+3. Prioritize wiring the Next.js buyer and seller apps to the established backend APIs.
+
+## 14. 📚 References
 
 - [Medusa v2 Documentation](https://docs.medusajs.com)
 - [Medusa Framework API](https://docs.medusajs.com/resources/framework)

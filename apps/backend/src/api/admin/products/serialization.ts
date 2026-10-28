@@ -1,11 +1,26 @@
 const isPricingField = (field: string) =>
   field.startsWith("variants.prices") || field.startsWith("*variants.prices")
 
+const requiredVariantFields = [
+  "variants.id",
+  "variants.sku",
+  "variants.inventory_quantity",
+]
+
+/**
+ * The native Admin list query excludes variants by default. Marketplace
+ * product views need the native Variant fields below for SKU and inventory;
+ * no Product schema fields are added. See AI_CONTEXT.md §8.11.
+ */
 export const remapAdminProductFields = (fields: string[]) => [
-  ...fields.filter((field) => !isPricingField(field)),
-  ...fields
-    .filter((field) => isPricingField(field))
-    .map((field) => field.replace("variants.prices.", "variants.price_set.prices.")),
+  ...new Set([
+    ...fields
+      .filter((field) => field !== "-variants" && !isPricingField(field)),
+    ...fields
+      .filter((field) => isPricingField(field))
+      .map((field) => field.replace("variants.prices.", "variants.price_set.prices.")),
+    ...requiredVariantFields,
+  ]),
 ]
 
 const remapVariant = (variant: any) => {
@@ -32,7 +47,25 @@ const remapVariant = (variant: any) => {
   return result
 }
 
-export const serializeAdminProduct = (product: any) => ({
-  ...product,
-  variants: product.variants?.map(remapVariant),
-})
+const summarizeVariantSkus = (variants: any[]) => {
+  const skus = variants
+    .map((variant) => variant.sku)
+    .filter((sku): sku is string => typeof sku === "string" && Boolean(sku.trim()))
+
+  return {
+    primary_sku: skus[0] ?? null,
+    additional_count: Math.max(0, variants.length - 1),
+    values: skus,
+  }
+}
+
+export const serializeAdminProduct = (product: any) => {
+  const variants = product.variants?.map(remapVariant) ?? []
+  return {
+    ...product,
+    variants,
+    // A read-only projection for list clients. Variant remains the native SKU
+    // owner; this avoids adding a denormalized Product SKU column.
+    marketplace_skus: summarizeVariantSkus(variants),
+  }
+}

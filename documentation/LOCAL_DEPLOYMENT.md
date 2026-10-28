@@ -578,6 +578,7 @@ Run all commands from `apps/backend/` directory.
 | `defineConfig is not defined` | ts-node ESM/CJS interop issue | Use `medusa-config.js` with `require('dotenv')` + manual modules |
 | `medusa build` fails with `medusa-config.ts ... TS1010: '*/' expected` | Stale/broken duplicate TypeScript config | Keep only `medusa-config.js`; remove `medusa-config.ts` |
 | Admin UI pages error (500) | Missing default core modules | Ensure all core modules registered in `medusa-config.js` modules object |
+| `Importing a module script failed` in Admin | A stale or previously malformed Vite Dashboard transform | Run `node scripts/patch-medusa-dashboard-single-option.cjs` from `apps/backend`, restart `../../node_modules/.bin/medusa develop`, then hard-refresh `/app/`; confirm `node --check node_modules/@medusajs/dashboard/dist/app.js` passes |
 
 ---
 
@@ -602,9 +603,11 @@ Before considering your local setup complete, verify:
 - [ ] `GET /admin/seller` returns 8 sellers with an admin token (401 without one)
 - [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 8 sellers
 - [ ] Admin **Products** page shows Product → Seller → Collection → Listing Status, with Seller and Status populated from Listing rather than product metadata
+- [ ] Admin **Products** page displays each Product's primary native Variant SKU; products with multiple variants display `(+N more)`
 - [ ] Product status filters (All, Pending Approval, Available, Sold, Rejected) update the product list and pagination correctly
 - [ ] A Seller cell opens `/app/sellers?q=<handle>` with the matching Seller filtered
 - [ ] Product detail shows the Marketplace & Seller Governance detail widget with Listing status, feedback, reassignment, archive/restore, and inline approve/edit-and-approve/reject/return-to-pending actions; use **Customize layout** to move it to the top
+- [ ] Product detail Variants widget lists every Variant's SKU, first price, and inventory quantity
 - [ ] Reassigning in that panel updates `listing.seller_id` and does not alter product metadata or lineage
 - [ ] `http://localhost:9000/app/listings` redirects to `http://localhost:9000/app/products`
 - [ ] Product detail governance panel approves/rejects a non-sold Listing and archives/restores an item; after restore, the Seller mapping and Listing status remain visible (no archive/restore loop)

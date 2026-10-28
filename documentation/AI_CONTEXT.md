@@ -782,6 +782,8 @@ For a reviewer-facing explanation of the Products versus Listings screens, see [
 GET /admin/products and GET /admin/products/:id
   → inject marketplace_listing from Listing(product_id) → Seller(seller_id)
   → Listing: id, listing_status, admin_feedback, reviewer; Seller: id, store_name, handle, avatar_url
+  → always load native variants.id, variants.sku, and variants.inventory_quantity
+  → expose marketplace_skus: primary_sku, additional_count, and values; Variant remains SKU source of truth
   → optional GET filters: listing_status=PENDING_APPROVAL|AVAILABLE|SOLD|REJECTED and include_archived=true
   → include_archived returns native soft-deleted Products with Listing and Seller data; UI renders INACTIVE
   → never resolves ownership from product metadata
@@ -797,8 +799,8 @@ PATCH /admin/products/:id/marketplace-listing
   → lineage is retained; no product ownership metadata is written
 
 ADMIN UI
-  → /app/products: Product, Seller, Collection, SKU, Inventory, Listing Status; lifecycle and Archived filters; Seller links to /app/sellers?q=<handle>. Status hierarchy: 🟡 pending, 🟢 available, 🔵 sold, 🔴 rejected, 🔘 inactive.
-  → /app/products/:id: Marketplace & Seller Governance widget; inline approve/edit-and-approve/reject/return-to-pending, reassignment, archive, and restore. Reviewer IDs are resolved through Medusa's User module to display the user's name, with the ID as fallback. It uses the main `product.details` zone and Admin **Customize layout** can place it at the top. There is no separate commerce drawer or Seller navigation button.
+  → /app/products: Product, Seller, Collection, SKU, Inventory, Listing Status; the SKU column shows the primary native Variant SKU and `(+N more)` when multiple variants exist. Lifecycle and Archived filters; Seller links to /app/sellers?q=<handle>. Status hierarchy: 🟡 pending, 🟢 available, 🔵 sold, 🔴 rejected, 🔘 inactive. The Dashboard patch is idempotent and replaces its injected column block, preventing duplicate-column syntax errors after reloads or reinstalls.
+  → /app/products/:id: Marketplace & Seller Governance widget plus a Variants widget listing each native Variant's SKU, first price, and inventory. Inline approve/edit-and-approve/reject/return-to-pending, reassignment, archive, and restore remain in governance. Reviewer IDs are resolved through Medusa's User module to display the user's name, with the ID as fallback. Both use the main `product.details` zone and Admin **Customize layout** can place them at the top. There is no separate commerce drawer or Seller navigation button.
   → /app/listings: compatibility redirect to /app/products
 
 CODE: src/workflows/admin/product-marketplace.ts
@@ -806,9 +808,12 @@ CODE: src/workflows/admin/product-marketplace.ts
       src/api/admin/products/**
       src/subscribers/product-deleted.ts
       src/admin/widgets/product-marketplace-listing.tsx
+      src/admin/widgets/product-variant-commerce.tsx
       src/admin/routes/listings/page.tsx
       scripts/patch-medusa-dashboard-single-option.cjs
 ```
+
+If the Admin shows `Importing a module script failed`, restart `medusa develop` after running the patch script. The script repairs the compiled Dashboard bundle and clears the stale Vite transform on startup; verify the bundle with `node --check node_modules/@medusajs/dashboard/dist/app.js`.
 
 ---
 

@@ -416,7 +416,16 @@ patchProductListMarketplaceFilters(
 const marketplaceSkuColumnSource = `      columnHelper.display({
         id: "pawnpawn-sku",
         header: "SKU",
-        cell: ({ row }) => row.original.variants?.[0]?.sku ?? "—",
+        cell: ({ row }) => {
+          const skuSummary = (row.original as HttpTypes.AdminProduct & {
+            marketplace_skus?: { primary_sku?: string | null; additional_count?: number }
+          }).marketplace_skus
+          const sku = skuSummary?.primary_sku ?? row.original.variants?.[0]?.sku
+          if (!sku) return "—"
+          return skuSummary?.additional_count
+            ? \`\${sku} (+\${skuSummary.additional_count} more)\`
+            : sku
+        },
       }),
 `
 const marketplaceInventoryColumnSource = `      columnHelper.display({
@@ -431,7 +440,12 @@ const marketplaceInventoryColumnSource = `      columnHelper.display({
 const marketplaceSkuColumnMjs = `      columnHelper.display({
         id: "pawnpawn-sku",
         header: "SKU",
-        cell: ({ row }) => row.original.variants?.[0]?.sku || "—"
+        cell: ({ row }) => {
+          const skuSummary = row.original.marketplace_skus;
+          const sku = skuSummary?.primary_sku || row.original.variants?.[0]?.sku;
+          if (!sku) return "—";
+          return skuSummary?.additional_count ? \`\${sku} (+\${skuSummary.additional_count} more)\` : sku;
+        }
       }),
 `
 const marketplaceInventoryColumnMjs = `      columnHelper.display({
@@ -446,7 +460,12 @@ const marketplaceInventoryColumnMjs = `      columnHelper.display({
 const marketplaceSkuColumnApp = `          columnHelper2.display({
             id: "pawnpawn-sku",
             header: "SKU",
-            cell: ({ row }) => row.original.variants?.[0]?.sku || "—"
+            cell: ({ row }) => {
+              const skuSummary = row.original.marketplace_skus;
+              const sku = skuSummary?.primary_sku || row.original.variants?.[0]?.sku;
+              if (!sku) return "—";
+              return skuSummary?.additional_count ? \`\${sku} (+\${skuSummary.additional_count} more)\` : sku;
+            }
           }),
 `
 const marketplaceInventoryColumnApp = `          columnHelper2.display({
@@ -460,13 +479,24 @@ const marketplaceInventoryColumnApp = `          columnHelper2.display({
 `
 const patchProductListMarketplaceColumns = (file, skuColumn, inventoryColumn) => {
   let source = fs.readFileSync(file, "utf8")
-  if (!source.includes('id: "pawnpawn-sku"')) {
-    const statusAnchor = file.endsWith("app.js")
-      ? '          columnHelper2.display({\n            id: "pawnpawn-listing-status",'
-      : '      columnHelper.display({\n        id: "pawnpawn-listing-status",'
-    if (!source.includes(statusAnchor)) {
-      throw new Error(`Unsupported Dashboard product marketplace columns bundle: ${file}`)
-    }
+  const statusAnchor = file.endsWith("app.js")
+    ? '          columnHelper2.display({\n            id: "pawnpawn-listing-status",'
+    : '      columnHelper.display({\n        id: "pawnpawn-listing-status",'
+  if (!source.includes(statusAnchor)) {
+    throw new Error(`Unsupported Dashboard product marketplace columns bundle: ${file}`)
+  }
+
+  // Replace the complete PawnPawn SKU/Inventory section before Listing
+  // Status. This makes the patch idempotent and repairs dashboard bundles
+  // written by older script versions that inserted the columns twice.
+  const skuMarker = 'id: "pawnpawn-sku"'
+  if (source.includes(skuMarker)) {
+    const firstSku = source.indexOf(skuMarker)
+    const baseIndex = source.lastIndexOf("base[1],", firstSku)
+    const columnStart = source.indexOf("\n", baseIndex) + 1
+    const statusStart = source.indexOf(statusAnchor)
+    source = `${source.slice(0, columnStart)}${skuColumn}${inventoryColumn}${source.slice(statusStart)}`
+  } else {
     source = source.replace(statusAnchor, `${skuColumn}${inventoryColumn}${statusAnchor}`)
   }
   source = source.replace(

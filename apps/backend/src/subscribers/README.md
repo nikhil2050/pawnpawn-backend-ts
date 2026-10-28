@@ -13,8 +13,11 @@ retry key, so an event retry is safe while a later resale to the same buyer is
 still recorded.
 
 `product-deleted.ts` listens for `product.deleted` and soft-deletes the linked
-Listing. Archive and restore actions therefore preserve Listing ownership and
-lineage while keeping inactive products out of operational moderation views.
+Listing only while the Product remains soft-deleted. It first reloads the Product
+with deleted records included, so a queued stale event cannot archive a Listing
+after an Admin restore. The Admin archive route uses one compensating Medusa
+workflow for Product and Listing, retaining ownership, inventory links, and
+lineage.
 
 Subscribers handle events emitted in the Medusa application.
 

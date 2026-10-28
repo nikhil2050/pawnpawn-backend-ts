@@ -86,8 +86,8 @@ Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backen
 │   │       ├── api/              # API routes: api/store/*, api/admin/* (file-based) + middlewares.ts
 │   │       │                     # GET/POST /admin/seller + GET/PATCH/DELETE /admin/seller/:id are implemented
 │   │       │                     # GET/POST /store/seller/listings, POST /store/seller/products, POST /store/seller/onboard, GET /store/sellers/:handle
-│   │       │                     # GET /admin/listings, POST /admin/listings/:id/review, POST /admin/hq-fulfillments/:id, POST /store/purchase
-│   │       ├── subscribers/      # Event subscribers (order.placed -> HQ fulfillment + lineage)
+│   │       │                     # filtered Listing review, HQ lifecycle/exception, Admin lineage, and purchase routes
+│   │       ├── subscribers/      # Event subscribers (product provisioning/deletion; order.placed -> HQ + lineage)
 │   │       └── workflows/        # Workflows and workflow steps
 │   └── storefront/               # OPTIONAL Next.js storefront (@dtc/storefront)
 │       └── src/
@@ -314,7 +314,7 @@ chore(config): register custom modules in medusa-config.js
 - Calling `this.list()` / `this.create()` / `this.update()` inside a `MedusaService` subclass. Generated methods are model-suffixed: `listSellers`, `createSellers`, `updateSellers`, `listProductLineages`, etc.
 - Resolving custom modules as `sellerModuleService` / `lineageModuleService`. Use `container.resolve("seller")` / `container.resolve("lineage")`.
 - Defining custom module table IDs as `UUID`. Medusa generates text IDs, so use `TEXT PRIMARY KEY`; also add `created_at`, `updated_at`, and `deleted_at`.
-- Assuming all custom PawnPawn routes exist. Seller workspace routes include onboarding, `GET/PATCH /store/seller/me`, listing CRUD, and seller product creation; public storefront routes include the AVAILABLE catalog, seller profile/archive, and product lineage. Check the implementation-status table in `API.md` before calling custom `POST/PATCH /store/products`, auction routes, or `/admin/lineage*`.
+- Assuming all custom PawnPawn routes exist. Seller workspace routes include onboarding, `GET/PATCH /store/seller/me`, listing CRUD, and seller product creation; public storefront routes include the AVAILABLE catalog, seller profile/archive, and product lineage. `GET /admin/lineage/:product_id` is available for disputes; check `API.md` before calling custom `POST/PATCH /store/products`, auction routes, or Admin lineage collection/mutation routes.
 - Seeding buyers with raw `INSERT INTO customer` while expecting them to log in. Register them through `POST /auth/customer/emailpass/register` and `POST /store/customers` so auth identities are created.
 
 ## Off-Limits

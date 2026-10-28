@@ -16,22 +16,39 @@ export class HqExceptionError extends Error {
 const restoreInventory = async (container: any, variantId: string) => {
   const query = container.resolve(ContainerRegistrationKeys.QUERY) as any
   const inventory = container.resolve(Modules.INVENTORY) as any
+  const stockLocation = container.resolve(Modules.STOCK_LOCATION) as any
   const { data: links } = await query.graph({
     entity: "product_variant_inventory_item",
     fields: ["variant_id", "inventory_item_id"],
     filters: { variant_id: [variantId] },
   })
+  if (!links?.length) {
+    throw new HqExceptionError(409, "No inventory item is linked to this order line variant")
+  }
+  const [primaryStockLocation] = await stockLocation.listStockLocations({}, { take: 1 })
+  if (!primaryStockLocation) {
+    throw new HqExceptionError(409, "No stock location is available to restore inventory")
+  }
+
   for (const link of links ?? []) {
     const levels = await inventory.listInventoryLevels({ inventory_item_id: link.inventory_item_id })
-    if (levels.length) {
-      const primaryLevel = levels[0]
-      await inventory.updateInventoryLevels(levels.map((level: any) => ({
-        id: level.id,
-        inventory_item_id: level.inventory_item_id,
-        location_id: level.location_id,
-        stocked_quantity: level.id === primaryLevel.id ? 1 : 0,
-      })))
+    const primaryLevel = levels.find((level: any) => level.location_id === primaryStockLocation.id)
+
+    if (!primaryLevel) {
+      await inventory.createInventoryLevels({
+        inventory_item_id: link.inventory_item_id,
+        location_id: primaryStockLocation.id,
+        stocked_quantity: 1,
+      })
+      continue
     }
+
+    await inventory.updateInventoryLevels(levels.map((level: any) => ({
+      id: level.id,
+      inventory_item_id: level.inventory_item_id,
+      location_id: level.location_id,
+      stocked_quantity: level.id === primaryLevel.id ? 1 : 0,
+    })))
   }
 }
 
@@ -76,6 +93,15 @@ export const executeHqException = async (
     }
     if (["DELIVERED", "CANCELLED_BY_SELLER"].includes(fulfillment.hq_status)) {
       throw new HqExceptionError(409, "This fulfillment can no longer be dispatched")
+    }
+    const requiredCurrentStatus = input.target_status === "AUTHENTICATED_AND_PACKED"
+      ? "ARRIVED_AT_HQ"
+      : "AUTHENTICATED_AND_PACKED"
+    if (fulfillment.hq_status !== requiredCurrentStatus) {
+      throw new HqExceptionError(
+        409,
+        `${input.target_status} requires ${requiredCurrentStatus}; current status is ${fulfillment.hq_status}`
+      )
     }
     return hq.updateHqFulfillments({
       id: fulfillment.id,

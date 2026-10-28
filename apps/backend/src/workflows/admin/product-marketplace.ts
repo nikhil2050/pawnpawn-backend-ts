@@ -71,7 +71,10 @@ export const getMarketplaceListingsForProducts = async (
   )
   const sellerIds = [...new Set(listings.map((listing) => listing.seller_id).filter(Boolean))]
   const sellers: any[] = sellerIds.length
-    ? await sellerService.listSellers({ id: sellerIds }, { take: sellerIds.length })
+    ? await sellerService.listSellers(
+      { id: sellerIds },
+      { withDeleted: options.withDeleted, take: sellerIds.length }
+    )
     : []
   const sellerById = new Map(sellers.map((seller) => [seller.id, seller]))
   const reviewerIds = [...new Set(listings.map((listing) => listing.reviewed_by).filter(Boolean))]

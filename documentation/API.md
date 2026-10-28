@@ -90,9 +90,11 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
 | Admin product marketplace mapping | `GET /admin/products`, `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing` | Implemented |
+| Admin product archive/restore | `POST /admin/products/:id/marketplace-archive` | Implemented (compensating workflow) |
 | Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
 | Admin HQ fulfillments | `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception` | Implemented |
-| Admin lineage REST | `/admin/lineage*` | **Planned** |
+| Admin lineage inspection | `GET /admin/lineage/:product_id` | Implemented |
+| Admin lineage mutations | `GET /admin/lineage`, `POST /admin/lineage` | **Planned** |
 
 Only these route files exist today:
 
@@ -100,6 +102,7 @@ Only these route files exist today:
 apps/backend/src/api/admin/custom/route.ts
 apps/backend/src/api/admin/hq-fulfillments/[id]/route.ts     # POST /admin/hq-fulfillments/:id
 apps/backend/src/api/admin/hq-fulfillments/[id]/exception/route.ts # POST line-item exception
+apps/backend/src/api/admin/lineage/[product_id]/route.ts     # GET provenance by product ID
 apps/backend/src/api/admin/listings/route.ts               # GET /admin/listings
 apps/backend/src/api/admin/listings/[id]/review/route.ts   # POST /admin/listings/:id/review
 apps/backend/src/api/admin/products/route.ts                # GET /admin/products (+ marketplace_listing)
@@ -225,7 +228,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. The custom routes served today include Seller onboarding, profile and listing routes; the AVAILABLE catalog; public Seller catalog and lineage; dummy purchase; Listing review; HQ lifecycle and exception handling; and Product marketplace mapping/archive routes. `POST/PATCH /store/products`, auction routes, and `/admin/lineage*` are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. The custom routes served today include Seller onboarding, profile and listing routes; the AVAILABLE catalog; public Seller catalog and lineage; dummy purchase; Listing review; HQ lifecycle and exception handling; Product marketplace mapping/archive routes; and read-only Admin lineage inspection. `POST/PATCH /store/products`, auction routes, and Admin lineage collection or mutation routes are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 Product creation normalizes the handle and allocates a unique value server-side. When `abc` already exists, the backend tries `abc-2`, then `abc-3`, and so on before invoking Medusa's native product create handler. The Admin success notification includes the final persisted handle.
 
@@ -1371,7 +1374,7 @@ paths:
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
-| GET | `/admin/listings` | Bearer | List all listings (with seller/product joins) | `200 OK` | Implemented |
+| GET | `/admin/listings` | Bearer | List listings with optional `status`/`listing_status` and `seller_id` filters | `200 OK` | Implemented |
 | POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, reject, or return a listing to pending approval | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
 
@@ -1395,7 +1398,7 @@ paths:
 | POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | `200 OK` | Planned |
 | GET | `/admin/products`, `/admin/products/:id` | Bearer | Native products with Listing-backed marketplace mapping | `200 OK` | Implemented |
 | GET/PATCH | `/admin/products/:id/marketplace-listing` | Bearer | Read or reassign the Listing Seller | `200 OK` | Implemented |
-| POST | `/admin/products/:id/marketplace-archive` | Bearer | Archive or restore Product and Listing | `200 OK` | Implemented |
+| POST | `/admin/products/:id/marketplace-archive` | Bearer | Archive or restore Product and Listing through the compensating workflow | `200 OK` | Implemented |
 
 > `GET /store/products` uses a custom marketplace serializer. It filters by custom Listing status, while category, collection, option values, variants, and pricing remain native Medusa product data.
 
@@ -1415,22 +1418,22 @@ paths:
 | POST | `/admin/seller` | Bearer | Create seller | `201 Created` | Implemented |
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | `200 OK` | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | `200 OK` | Implemented |
-| GET | `/admin/listings` | Bearer | List all listings (with seller/product) | `200 OK` | Implemented |
+| GET | `/admin/listings` | Bearer | List listings with optional status and seller filters | `200 OK` | Implemented |
 | POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, reject, or return a listing to pending approval | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
 | GET | `/admin/products`, `/admin/products/:id` | Bearer | Native Medusa product response plus Listing-backed `marketplace_listing` (`id`, `listing_status`, feedback, reviewer, Seller); `include_archived=true` includes soft-deleted Products | `200 OK` | Implemented |
 | GET/PATCH | `/admin/products/:id/marketplace-listing` | Bearer | Read or reassign Listing seller; metadata is not used | `200 OK` | Implemented |
-| POST | `/admin/products/:id/marketplace-archive` | Bearer | Soft archive or restore Product and linked Listing (`ARCHIVE` or `RESTORE`) | `200 OK` | Implemented |
+| POST | `/admin/products/:id/marketplace-archive` | Bearer | Archive or restore Product and Listing as one compensating Medusa workflow (`ARCHIVE` or `RESTORE`); mapping and inventory links remain intact | `200 OK` | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | `200 OK` | Implemented |
+| GET | `/admin/lineage/:product_id` | Bearer | Inspect product, Listing, ownership history, and HQ records | `200 OK` | Implemented |
 | GET | `/admin/lineage` | Bearer | List all lineage entries | `200 OK` | Planned |
-| GET | `/admin/lineage/:id` | Bearer | Get lineage by ID | `200 OK` | Planned |
 | POST | `/admin/lineage` | Bearer | Record lineage transfer | `201 Created` | Planned |
 
-> **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. Listing review, per-seller listings, and HQ fulfillment transitions are also live. Lineage REST remains **Planned**; use the module service or SQL until those routes exist.
+> **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. Listing review, per-seller listings, full HQ lifecycle transitions, and `GET /admin/lineage/:product_id` inspection are also live. Admin lineage collection and mutation routes remain **Planned**.
 
 `GET /admin/products` accepts the PawnPawn-only `listing_status` query parameter: `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, or `REJECTED`. It filters on custom Listing records before native Product pagination. `include_archived=true` uses Medusa's `withDeleted` query path and returns only soft-deleted Products for the Archived view.
 
-The Admin Products table orders marketplace columns as **Product**, **Seller**, **Collection**, **SKU**, **Inventory**, then **Listing Status**. Status quick filters include Archived; archived Products render as `INACTIVE`. The Product detail governance widget supports Seller reassignment, inline `APPROVE`, `EDIT_AND_APPROVE`, `REJECT`, and `RETURN` (Pending approval), plus archive/restore. It uses the main product-details zone and can be moved to the top with Admin **Customize layout**. `/app/listings` redirects to this unified screen.
+The Admin Products table orders marketplace columns as **Product**, **Seller**, **Collection**, **SKU**, **Inventory**, then **Listing Status**. Status quick filters include Archived; archived Products render as `INACTIVE`. The Product detail governance widget supports Seller reassignment, inline `APPROVE`, `EDIT_AND_APPROVE`, `REJECT`, and `RETURN` (Pending approval), plus archive/restore. Archive and restore run in one compensating Medusa workflow for Product and Listing; `listing.product_id` is retained, inventory links are preserved, and a stale `product.deleted` event cannot re-archive a restored Listing. It uses the main product-details zone and can be moved to the top with Admin **Customize layout**. `/app/listings` redirects to this unified screen.
 
 ### Custom Module Service Methods
 
@@ -1871,10 +1874,10 @@ Content-Type: application/json
 
 ### 6.9 Advance an HQ Fulfillment (Working Today)
 
-> **Status: IMPLEMENTED** — `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment through its lifecycle. Passing `certificate_url` stores the authenticity certificate; reaching `DELIVERED` releases payout.
+> **Status: IMPLEMENTED** — `POST /admin/hq-fulfillments/:id` enforces the full line-item lifecycle. Passing `certificate_url` stores the authenticity certificate; reaching `DELIVERED` releases payout.
 
 ```http
-POST /admin/hq-fulfillments/hq_01M.../review
+POST /admin/hq-fulfillments/hq_01M...
 Authorization: Bearer <admin_token>
 Content-Type: application/json
 
@@ -1884,7 +1887,7 @@ Content-Type: application/json
 }
 ```
 
-Valid actions: `MARK_RECEIVED`, `AUTHENTICATE_AND_PACK`, `DISPATCH`, `MARK_DELIVERED`.
+Valid sequence: `MARK_RECEIVED` (`WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ`), `AUTHENTICATE_AND_PACK` (`ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED`), `DISPATCH` (`AUTHENTICATED_AND_PACKED` → `DISPATCHED`), then `MARK_DELIVERED` (`DISPATCHED` → `DELIVERED`). Skipping a state returns `409 Conflict`.
 
 **Response (200):**
 ```json
@@ -1978,6 +1981,10 @@ remain admin-controlled.
 Each transfer includes the public seller profile, opaque buyer customer ID, price,
 transaction timestamp, and `voided_at` when an HQ cancellation reversed it. Customer
 PII, payment data, and internal order-line identifiers are never exposed.
+
+### 6.14 Admin Product Lineage Inspection (Working Today)
+
+`GET /admin/lineage/:product_id` is a read-only dispute and authentication view. It returns the native Product, its Listing review state, full Lineage records including buyer and order-line identifiers, and all HQ fulfillment records. Seller data is summarized without payment-account details.
 
 ---
 
@@ -2081,7 +2088,7 @@ Do **not** resolve `sellerModuleService` / `lineageModuleService` — those name
 
 **Generated CRUD:** `listSellers`, `retrieveSeller`, `createSellers`, `updateSellers`, `deleteSellers`.
 
-**Admin CRUD API:** `GET /admin/seller` (filters: `q`, `trust`, `category`, `status`, `limit`, `offset`), `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`). The Medusa Admin **Sellers** page (`/app/sellers`) consumes the list endpoint. Lineage REST (`/admin/lineage*`) remains planned.
+**Admin CRUD API:** `GET /admin/seller` (filters: `q`, `trust`, `category`, `status`, `limit`, `offset`), `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`). The Medusa Admin **Sellers** page (`/app/sellers`) consumes the list endpoint. `GET /admin/lineage/:product_id` is implemented; Admin lineage collection and mutation routes remain planned.
 
 ### Product Lineage Module (`src/modules/lineage`)
 

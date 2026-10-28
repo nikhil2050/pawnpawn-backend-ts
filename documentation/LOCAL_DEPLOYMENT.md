@@ -287,8 +287,8 @@ On a freshly seeded canonical database, expect the sample count documented in `S
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `GET /admin/products` (including `include_archived=true`), `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing`, `POST /admin/products/:id/marketplace-archive`, `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the product create/delete marketplace subscribers, the Medusa Admin **Sellers** page at `/app/sellers`, and unified Seller/Listing governance in `/app/products`. `/app/listings` redirects to Products.
-> **Planned:** custom `POST/PATCH /store/products`, auctions, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `GET /admin/lineage/:product_id`, `GET /admin/products` (including `include_archived=true`), `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing`, `POST /admin/products/:id/marketplace-archive`, `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the product create/delete marketplace subscribers, the Medusa Admin **Sellers** page at `/app/sellers`, and unified Seller/Listing governance in `/app/products`. `/app/listings` redirects to Products.
+> **Planned:** custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes. See `API.md` → Current Implementation Status.
 
 > **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
 
@@ -438,11 +438,13 @@ is required.
 
 ```bash
 TOKEN=<admin_token>
-curl -s -X POST http://localhost:9000/admin/hq-fulfillments/hq_01M.../review \
+curl -s -X POST http://localhost:9000/admin/hq-fulfillments/hq_01M... \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"action":"AUTHENTICATE_AND_PACK","certificate_url":"https://cdn.pawnpawn.com/cert/hq_01M....pdf"}'
+  -d '{"action":"MARK_RECEIVED"}'
 ```
+
+Repeat with `AUTHENTICATE_AND_PACK` (optionally include `certificate_url`), `DISPATCH`, and `MARK_DELIVERED`. Each action requires the immediately preceding status; skipping a state returns `409`.
 
 ### Test Create Product (Auction) — Planned
 
@@ -605,7 +607,8 @@ Before considering your local setup complete, verify:
 - [ ] Product detail shows the Marketplace & Seller Governance detail widget with Listing status, feedback, reassignment, archive/restore, and inline approve/edit-and-approve/reject/return-to-pending actions; use **Customize layout** to move it to the top
 - [ ] Reassigning in that panel updates `listing.seller_id` and does not alter product metadata or lineage
 - [ ] `http://localhost:9000/app/listings` redirects to `http://localhost:9000/app/products`
-- [ ] Product detail governance panel approves/rejects a non-sold Listing and archives/restores an item
+- [ ] Product detail governance panel approves/rejects a non-sold Listing and archives/restores an item; after restore, the Seller mapping and Listing status remain visible (no archive/restore loop)
+- [ ] Any legacy catalog Product intended for marketplace use has exactly one normalized Listing row before moderation; missing rows are repaired as a data migration, not inferred by the Admin UI
 - [ ] `POST /admin/seller` creates a seller and returns 201
 - [ ] `PATCH /admin/seller/:id` updates seller fields and returns 200
 - [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
@@ -624,7 +627,7 @@ Before considering your local setup complete, verify:
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (custom `POST/PATCH /store/products`, auctions, `/admin/lineage*`) are not implemented yet. Seller onboarding/profile management, seller listings, public lineage, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
+> Remaining custom routes (custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes) are not implemented yet. Seller onboarding/profile management, seller listings, public and per-product Admin lineage inspection, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
 
 ### UI-only HQ exception test (pending Admin screen)
 

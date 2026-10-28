@@ -89,6 +89,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | Implemented |
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
+| Admin product marketplace mapping | `GET /admin/products`, `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing` | Implemented |
 | Seller admin listings | `GET /admin/seller/:id/listings` | Implemented |
 | Admin HQ fulfillments | `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception` | Implemented |
 | Admin lineage REST | `/admin/lineage*` | **Planned** |
@@ -98,8 +99,13 @@ Only these route files exist today:
 ```text
 apps/backend/src/api/admin/custom/route.ts
 apps/backend/src/api/admin/hq-fulfillments/[id]/route.ts     # POST /admin/hq-fulfillments/:id
+apps/backend/src/api/admin/hq-fulfillments/[id]/exception/route.ts # POST line-item exception
 apps/backend/src/api/admin/listings/route.ts               # GET /admin/listings
 apps/backend/src/api/admin/listings/[id]/review/route.ts   # POST /admin/listings/:id/review
+apps/backend/src/api/admin/products/route.ts                # GET /admin/products (+ marketplace_listing)
+apps/backend/src/api/admin/products/[id]/route.ts           # GET /admin/products/:id (+ marketplace_listing)
+apps/backend/src/api/admin/products/[id]/marketplace-archive/route.ts # POST archive/restore
+apps/backend/src/api/admin/products/[id]/marketplace-listing/route.ts # GET/PATCH mapping
 apps/backend/src/api/admin/seller/route.ts                 # GET/POST /admin/seller
 apps/backend/src/api/admin/seller/[id]/route.ts            # GET/PATCH/DELETE /admin/seller/:id
 apps/backend/src/api/admin/seller/[id]/listings/route.ts   # GET /admin/seller/:id/listings
@@ -219,7 +225,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://localhost:9000/auth/ses
 
 ## 4. OpenAPI 3.0 Specification
 
-> **Coverage note:** this spec describes the full intended contract. Actually served today: auth paths, core store/admin routes, `GET /store/products/{id}`, the admin seller paths (`GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/{id}`), the admin listing/HQ paths (`GET /admin/listings`, `POST /admin/listings/{id}/review`, `POST /admin/hq-fulfillments/{id}`), the storefront seller paths (`POST /store/seller/onboard`, `GET /store/sellers/{handle}`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/{id}`), and the MVP purchase path (`POST /store/purchase`). `POST/PATCH /store/products`, auctions, `/store/products/{id}/lineage`, `/store/seller/me`, and `/admin/lineage*` paths are **Planned** — see [Current Implementation Status](#current-implementation-status).
+> **Coverage note:** this spec describes the full intended contract. The custom routes served today include Seller onboarding, profile and listing routes; the AVAILABLE catalog; public Seller catalog and lineage; dummy purchase; Listing review; HQ lifecycle and exception handling; and Product marketplace mapping/archive routes. `POST/PATCH /store/products`, auction routes, and `/admin/lineage*` are **Planned** — see [Current Implementation Status](#current-implementation-status).
 
 Product creation normalizes the handle and allocates a unique value server-side. When `abc` already exists, the backend tries `abc-2`, then `abc-3`, and so on before invoking Medusa's native product create handler. The Admin success notification includes the final persisted handle.
 
@@ -1366,7 +1372,7 @@ paths:
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | GET | `/admin/listings` | Bearer | List all listings (with seller/product joins) | `200 OK` | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, reject, or return a listing to pending approval | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
 
 ### HQ Fulfillment APIs
@@ -1374,20 +1380,22 @@ paths:
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment through its lifecycle | `200 OK` | Implemented |
+| POST | `/admin/hq-fulfillments/:id/exception` | Bearer | Split dispatch or cancel/refund one order line | `200 OK` | Implemented |
 
 ### Product APIs
-
-| GET | `/store/products` | Publishable key | AVAILABLE listings only; category, collection, and option filters | `200 OK` | Implemented |
-| GET | `/store/products/:id/lineage` | Publishable key | Chronological public ownership provenance | `200 OK` | Implemented |
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
 | GET | `/store/products` | Publishable key | List only `AVAILABLE` marketplace products in the key's sales channels; filter by category, collection, and options | `200 OK` | Implemented |
 | GET | `/store/products/:id` | Publishable key | Get product details | `200 OK` | Implemented (core) |
+| GET | `/store/products/:id/lineage` | No | Chronological public ownership provenance | `200 OK` | Implemented |
 | POST | `/store/products` | Bearer/Cookie | Create seller listing (FIXED_PRICE or AUCTION) | `201 Created` | Planned |
 | PATCH | `/store/products/:id` | Bearer/Cookie | Update seller listing | `200 OK` | Planned |
 | POST | `/store/products/:id/auction/start` | Bearer/Cookie | Start auction | `200 OK` | Planned |
 | POST | `/store/products/:id/bid` | Bearer/Cookie | Place bid on auction | `200 OK` | Planned |
+| GET | `/admin/products`, `/admin/products/:id` | Bearer | Native products with Listing-backed marketplace mapping | `200 OK` | Implemented |
+| GET/PATCH | `/admin/products/:id/marketplace-listing` | Bearer | Read or reassign the Listing Seller | `200 OK` | Implemented |
+| POST | `/admin/products/:id/marketplace-archive` | Bearer | Archive or restore Product and Listing | `200 OK` | Implemented |
 
 > `GET /store/products` uses a custom marketplace serializer. It filters by custom Listing status, while category, collection, option values, variants, and pricing remain native Medusa product data.
 
@@ -1408,14 +1416,21 @@ paths:
 | PATCH | `/admin/seller/:id` | Bearer | Update any seller field | `200 OK` | Implemented |
 | DELETE | `/admin/seller/:id` | Bearer | Deactivate seller (soft-delete) | `200 OK` | Implemented |
 | GET | `/admin/listings` | Bearer | List all listings (with seller/product) | `200 OK` | Implemented |
-| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | `200 OK` | Implemented |
+| POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, reject, or return a listing to pending approval | `200 OK` | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | `200 OK` | Implemented |
+| GET | `/admin/products`, `/admin/products/:id` | Bearer | Native Medusa product response plus Listing-backed `marketplace_listing` (`id`, `listing_status`, feedback, reviewer, Seller); `include_archived=true` includes soft-deleted Products | `200 OK` | Implemented |
+| GET/PATCH | `/admin/products/:id/marketplace-listing` | Bearer | Read or reassign Listing seller; metadata is not used | `200 OK` | Implemented |
+| POST | `/admin/products/:id/marketplace-archive` | Bearer | Soft archive or restore Product and linked Listing (`ARCHIVE` or `RESTORE`) | `200 OK` | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | `200 OK` | Implemented |
 | GET | `/admin/lineage` | Bearer | List all lineage entries | `200 OK` | Planned |
 | GET | `/admin/lineage/:id` | Bearer | Get lineage by ID | `200 OK` | Planned |
 | POST | `/admin/lineage` | Bearer | Record lineage transfer | `201 Created` | Planned |
 
 > **Implemented seller CRUD:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`) are live. Listing review, per-seller listings, and HQ fulfillment transitions are also live. Lineage REST remains **Planned**; use the module service or SQL until those routes exist.
+
+`GET /admin/products` accepts the PawnPawn-only `listing_status` query parameter: `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, or `REJECTED`. It filters on custom Listing records before native Product pagination. `include_archived=true` uses Medusa's `withDeleted` query path and returns only soft-deleted Products for the Archived view.
+
+The Admin Products table orders marketplace columns as **Product**, **Seller**, **Collection**, **SKU**, **Inventory**, then **Listing Status**. Status quick filters include Archived; archived Products render as `INACTIVE`. The Product detail governance widget supports Seller reassignment, inline `APPROVE`, `EDIT_AND_APPROVE`, `REJECT`, and `RETURN` (Pending approval), plus archive/restore. It uses the main product-details zone and can be moved to the top with Admin **Customize layout**. `/app/listings` redirects to this unified screen.
 
 ### Custom Module Service Methods
 
@@ -1582,7 +1597,7 @@ Content-Type: application/json
 
 ### 6.4 Purchase Product
 
-> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated customer and accepts one or more unique variants. The server calculates each price from the Medusa price set in the requested region; clients cannot set a line price. It locks all requested Listings, revalidates `AVAILABLE` status and stock, creates a Medusa order through `createOrderWorkflow`, performs a successful dummy capture, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. A real payment provider, durable reservation transaction, and public lineage route remain follow-up work.
+> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated customer and accepts one or more unique variants. The server calculates each price from the Medusa price set in the requested region; clients cannot set a line price. It locks all requested Listings, revalidates `AVAILABLE` status and stock, creates a Medusa order through `createOrderWorkflow`, performs a successful dummy capture, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. A real payment provider and durable reservation/outbox transaction remain follow-up work; public lineage is available at `GET /store/products/:id/lineage`.
 
 **Request:**
 ```http
@@ -1789,7 +1804,7 @@ Authorization: Bearer <admin_token>
 
 ### 6.8 Review a Listing (Working Today)
 
-> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` re-reviews any non-sold Listing. `APPROVE` and `EDIT_AND_APPROVE` publish the product and set the Listing to `AVAILABLE`; `REJECT` sets it to `REJECTED` and drafts the product. Legacy `RETURN` resets it to `PENDING_APPROVAL` and drafts the product. Each action records the reviewer, timestamp, and supplied feedback. A dedicated Admin UI review screen is still pending.
+> **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` re-reviews any non-sold Listing. `APPROVE` and `EDIT_AND_APPROVE` publish the product and set the Listing to `AVAILABLE`; `REJECT` sets it to `REJECTED` and drafts the product. Legacy `RETURN` resets it to `PENDING_APPROVAL` and drafts the product. Each action records the reviewer, timestamp, and supplied feedback. The unified Product detail governance panel provides the review controls; `/app/listings` redirects to Products.
 
 ```http
 POST /admin/listings/listing_01M.../review

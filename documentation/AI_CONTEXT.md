@@ -148,28 +148,17 @@ Seller identity is a Medusa Customer identity plus one Seller profile. Product o
 
 - Medusa owns `ProductCategory`, `ProductCollection`, `ProductOption`, and `ProductOptionValue`. Seed data uses native fashion categories (`Apparel`, `Outerwear`, `Footwear`) and the `Karan Johar Fall Drop` collection.
 - Seller, Listing, ProductLineage, and HQFulfillment are custom modules registered in `medusa-config.js`. Listing is the seller-to-product source of truth; Medusa `product` is not extended with marketplace ownership columns.
-- The authenticated seller listing route resolves the active Seller profile from the customer session, then uses Medusa's `createProductsWorkflow` to create a draft product with native category/collection/options. The `product.created` subscriber provisions every product created through either the Seller API or native Admin UI: it assigns or repairs standardized variant SKUs, enables one-of-one inventory, and creates an idempotent linked `PENDING_APPROVAL` Listing. Seller metadata chooses the Listing seller; Admin-created products fall back to the `system` Seller and `CELEB-SYSTEM-GEN-[SHORT_UUID]` SKU pattern. The Seller route is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
+- The authenticated seller listing route resolves the active Seller profile from the customer session, then uses Medusa's `createProductsWorkflow` to create a draft product with native category/collection/options. The `product.created` subscriber provisions every product created through either the Seller API or native Admin UI: it assigns or repairs standardized variant SKUs, enables one-of-one inventory, and creates an idempotent linked `PENDING_APPROVAL` Listing. Creation metadata supplies the initial Seller context and compatibility display fields only; Listing remains the ownership source of truth. Admin-created products fall back to the `system` Seller and `CELEB-SYSTEM-GEN-[SHORT_UUID]` SKU pattern. The Seller route is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
 - Admin product creation derives the Handle from Title as lowercase words joined with hyphens. Hyphens are removed from the Title input and rejected by the Admin/Seller product middleware; generated handles are the only place this separator is introduced.
 - Product creation checks the normalized handle against Medusa products in the backend. If it already exists, the request is rewritten to the next available suffix (`handle-2`, `handle-3`, ...), and the Admin success toast displays the final handle returned by Medusa.
 - Product-creation middleware enforces one value per option type for Admin and Seller creation. Adding an existing Admin option such as Size, Colour, or Authenticity starts with no value selected; the admin must choose one. The form reduces any retained legacy selection to its latest value, and choosing another value replaces the prior choice. The option value field uses the neutral localized `Select` placeholder rather than Medusa's colour-specific `Red, Blue, Green` example. The startup patch updates the Dashboard package and Medusa's generated `.medusa` Admin asset, adds a new route-asset URL to avoid browser reuse of the prior bundle, and clears the disposable Vite dependency cache so `/app/entry.jsx` is rebuilt from the corrected code. Repeating an option title or submitting an option `values` array with more than one value returns `400`, preserving the one-physical-item, one-variant model.
-- Admin review accepts `APPROVE`, `EDIT_AND_APPROVE`, and `REJECT` from any non-sold state. Approval makes the Listing `AVAILABLE` and publishes its product; rejection makes it `REJECTED`, drafts its product, and records the reviewer and latest feedback. Legacy `RETURN` resets a non-sold Listing to `PENDING_APPROVAL` and drafts its product. Seller edits also resubmit to `PENDING_APPROVAL`. The API is implemented; a dedicated Admin review page is still pending.
+- Admin review accepts `APPROVE`, `EDIT_AND_APPROVE`, and `REJECT` from any non-sold state. Approval makes the Listing `AVAILABLE` and publishes its product; rejection makes it `REJECTED`, drafts its product, and records the reviewer and latest feedback. Legacy `RETURN` resets a non-sold Listing to `PENDING_APPROVAL` and drafts its product. Seller edits also resubmit to `PENDING_APPROVAL`. The unified Product detail governance panel provides review controls; native product fields can be edited separately before inline `EDIT_AND_APPROVE`.
+- Admin product responses inject `marketplace_listing` by reading `listing.product_id` and then `listing.seller_id`; it contains `id`, `listing_status`, `admin_feedback`, and Seller `id`, store name, handle, and avatar. `GET /admin/products?listing_status=PENDING_APPROVAL|AVAILABLE|SOLD|REJECTED` filters through the Listing module before native Product pagination. Product metadata is never read for seller ownership. The native Products table orders Product, Seller, Collection, then a Listing Status badge, with status quick filters. Product details include an inline Listing/Seller panel for Seller reassignment and `APPROVE`, `EDIT_AND_APPROVE`, or `REJECT` review actions.
 - Sold unique items retain product, SKU, Listing, lineage, and HQ records; inventory becomes zero. Mixed carts create one HQ row per order line and payout release is gated by `DELIVERED`.
 
-### 4.3 Current database alignment (local `pawnpawn_db`)
+### 4.3 Seed and local database alignment
 
-Applied with `sql/marketplace_prompt_alignment.sql`:
-
-| Entity | Current data |
-|---|---:|
-| Sellers | 8 |
-| Products | 17 (13 marketplace products, 4 draft Medusa demos) |
-| Listings | 13, all currently `AVAILABLE` |
-| Marketplace inventory | 13 unique variants, one stocked unit each |
-| Native fashion categories | Apparel, Outerwear, Footwear |
-| Native campaign collection | Karan Johar Fall Drop |
-| Native marketplace options | Size and Condition |
-
-The migration canonicalizes marketplace SKUs, attaches native option values, assigns the fall-drop collection to selected listings, and adds `listing.admin_feedback`. Existing celebrity fixture sellers without `customer_id` are catalog fixtures; production onboarding must create or link the Medusa Customer identity first.
+`sql/marketplace_prompt_alignment.sql` canonicalizes marketplace SKUs, attaches native option values, assigns the fall-drop collection to selected listings, and adds `listing.admin_feedback`. The canonical sample seed contains celebrity fixtures, buyer accounts, marketplace Listings, inventory, and lineage; see `SAMPLE_DATA.md` for fixture counts and verification commands. Do not treat seed counts or statuses as the current `pawnpawn_db` state: Admin review, archive, and checkout mutate it. Existing celebrity fixtures without `customer_id` are catalog fixtures; production onboarding must create or link a Medusa Customer first.
 
 ### 4.4 Feature implementation checklist
 
@@ -217,7 +206,9 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Reviewer, review timestamp, rejection feedback, and admin feedback are stored.
 - [ ] **Partial** — A dedicated append-only review audit table/event log is still recommended for multiple decisions per listing.
 - [x] **Implemented** — Admin listing endpoints expose seller/listing relationships and lifecycle data.
-- [ ] **Partial** — A complete Admin UI for listing review, buyer/order details, and HQ state is still pending.
+- [x] **Implemented** — Product list Seller column and product detail Listing/Seller panel use the normalized Listing mapping.
+- [x] **Implemented** — Product detail governance panel supports Listing review and Seller reassignment; `/app/listings` redirects to Products.
+- [ ] **Partial** — Buyer/order details, edit-and-approve feedback, and HQ state UI remain pending.
 
 #### 4.4.5 Buyer storefront and search
 
@@ -234,7 +225,8 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Resale can change the current Listing seller while lineage preserves prior ownership.
 - [x] **Implemented (MVP)** — `POST /store/purchase` uses per-Listing locks, revalidates availability and stock, calculates prices on the server, creates an order with a dummy capture, then marks each Listing sold, locks inventory at zero, creates per-line HQ rows, and records lineage.
 - [ ] **Partial** — Payment-provider authorization and a database-backed reservation/outbox transaction remain required for production checkout durability.
-- [ ] **Planned** — Dedicated product lineage REST endpoints for buyers and admins.
+- [x] **Implemented** — `GET /store/products/:id/lineage` returns public product provenance.
+- [ ] **Planned** — Dedicated admin lineage REST endpoints.
 
 #### 4.4.7 HQ fulfillment and payouts
 
@@ -308,7 +300,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 ### 5.5 Known follow-up work
 
 - Wire the separate buyer and seller Next.js applications to these APIs.
-- Add a dedicated Admin listings/product view with seller, buyer, listing state, and HQ state.
+- Add buyer/order details, edit-and-approve correction fields, and HQ state to the unified Products governance panel.
 - Replace the payout timestamp with a Razorpay payout adapter and idempotency keys.
 - Add certificate generation/storage and delivery, return, and dispute workflows.
 - Add integration tests for seller authorization, mixed-seller carts, listing review, HQ transitions, and payout release.
@@ -564,6 +556,13 @@ pkill -f "medusa develop"                  # stop
 lsof -ti:9000 | xargs kill -9              # if port is stuck
 ```
 
+There is no `develop` npm script. Use `npm run dev` inside `apps/backend`,
+`../../node_modules/.bin/medusa develop` there, or `npm run backend:dev` from
+the repository root. The root commands require installed workspace
+dependencies; run `npm install` at the root if `turbo: command not found`
+appears. `EADDRINUSE` on port 9000 means another Medusa process is already
+running; stop it before starting a second server.
+
 ---
 
 ## 7. 📦 Package Scripts
@@ -610,8 +609,9 @@ npm run db:import
 ../../node_modules/.bin/medusa exec ./src/scripts/seed-demo-products.ts
 ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
 
-# Load PawnPawn sample data (8 sellers, 5 buyers, 13 seller-mapped listings, inventory, lineage)
+# Load canonical PawnPawn sample fixtures (sellers, buyers, Listings, inventory, lineage)
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 ```
 
 **Sample data**: see `documentation/SAMPLE_DATA.md`. Buyer accounts use password `buyer1234`; the store API key is `pk_a6c505481cec4bc82dd9cfcbee017cac5ca0affd31ae65ee78861dcd46bc30e4`.
@@ -769,6 +769,34 @@ CODE: src/workflows/storefront/lineage.ts
       src/api/store/products/[id]/lineage/route.ts
 ```
 
+### 8.11 Admin Product Seller Mapping (Implemented)
+
+For a reviewer-facing explanation of the Products versus Listings screens, see [`PRODUCTS_AND_LISTINGS.md`](./PRODUCTS_AND_LISTINGS.md).
+
+```
+GET /admin/products and GET /admin/products/:id
+  → inject marketplace_listing from Listing(product_id) → Seller(seller_id)
+  → Listing: id, listing_status, admin_feedback, reviewer; Seller: id, store_name, handle, avatar_url
+  → optional GET filters: listing_status=PENDING_APPROVAL|AVAILABLE|SOLD|REJECTED and include_archived=true
+  → include_archived returns native soft-deleted Products with Listing data; UI renders INACTIVE
+  → never resolves ownership from product metadata
+
+PATCH /admin/products/:id/marketplace-listing
+  → validates an active Seller and changes only Listing.seller_id
+  → lineage is retained; no product ownership metadata is written
+
+ADMIN UI
+  → /app/products: Product, Seller, Collection, SKU, Inventory, Listing Status; lifecycle and Archived filters; Seller links to /app/sellers?q=<handle>. Status hierarchy: 🟡 pending, 🟢 available, 🔵 sold, 🔴 rejected, 🔘 inactive.
+  → /app/products/:id: Marketplace & Seller Governance widget; inline approve/edit-and-approve/reject/return-to-pending, reassignment, archive, and restore. Reviewer IDs are resolved through Medusa's User module to display the user's name, with the ID as fallback. It uses the main `product.details` zone and Admin **Customize layout** can place it at the top. There is no separate commerce drawer or Seller navigation button.
+  → /app/listings: compatibility redirect to /app/products
+
+CODE: src/workflows/admin/product-marketplace.ts
+      src/api/admin/products/**
+      src/admin/widgets/product-marketplace-listing.tsx
+      src/admin/routes/listings/page.tsx
+      scripts/patch-medusa-dashboard-single-option.cjs
+```
+
 ---
 
 ## 9. 🔐 Authentication
@@ -833,6 +861,8 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | POST | `/admin/listings/:id/review` | Bearer | Approve, edit-and-approve, or reject a listing | Implemented |
 | GET | `/admin/seller/:id/listings` | Bearer | Listings + HQ fulfillments for a seller | Implemented |
 | POST | `/admin/hq-fulfillments/:id` | Bearer | Advance an HQ fulfillment lifecycle | Implemented |
+| GET | `/admin/products`, `/admin/products/:id` | Bearer | Medusa products plus Listing-backed `marketplace_listing` | Implemented |
+| GET/PATCH | `/admin/products/:id/marketplace-listing` | Bearer | Read/reassign a product's Listing seller | Implemented |
 
 ### 10.4 Products
 | Method | Endpoint | Auth | Description | Status |
@@ -868,6 +898,9 @@ All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
 | Route | Description | Status |
 |-------|-------------|--------|
 | `/app/sellers` | Sellers list page (store, handle, category, trust, verification, bio, social, customer link) | Implemented |
+| `/app/products` | Native Products table with Listing-backed Seller column | Implemented |
+| `/app/products/:id` | Marketplace & Seller Governance detail widget; place at top with Admin Customize layout | Implemented |
+| `/app/listings` | Compatibility redirect to `/app/products` | Implemented |
 
 ### 10.8 Custom Module Service Access (Implemented)
 
@@ -905,12 +938,12 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 3. Copy env: `cp .env.example .env`
 4. Run migrations: `../../node_modules/.bin/medusa db:migrate` (ignore migration scripts error)
 5. Import custom schema: `npm run db:import`
-6. Seed sample data: `psql -h localhost -U postgres -d pawnpawn_db -f sql/sample-data.sql`
+6. Seed sample data: run `sql/sample-data.sql`, then `sql/marketplace_prompt_alignment.sql`
 7. Start server: `../../node_modules/.bin/medusa develop`
 8. Test health: `curl http://localhost:9000/health`
 9. Verify modules: `../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts`
 10. Admin login: `POST /auth/user/emailpass` with `admin@pawnpawn.com` / `supersecret`
-11. Admin sellers: `GET /admin/seller` with the admin token returns 8 sellers; open `http://localhost:9000/app/sellers`
+11. Admin sellers: `GET /admin/seller` with the admin token returns the active seller records; open `http://localhost:9000/app/sellers`
 12. Buyer login: `POST /auth/customer/emailpass` with `sarah.johnson@gmail.com` / `buyer1234`
 13. Onboard a seller: `POST /store/seller/onboard` with a customer token
 14. Create a listing: `POST /store/seller/listings` with a seller token
@@ -930,4 +963,4 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules implemented, dummy purchase checkout with per-line HQ/lineage processing implemented, sample data seeded (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage records), schema aligned to text IDs + Medusa timestamps, admin seller CRUD API + Sellers page implemented.*
+*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules, dummy checkout, public lineage, unified Product governance, and Admin seller CRUD are implemented. Canonical fixture counts are maintained in `SAMPLE_DATA.md`; local runtime data changes through review, checkout, and archive actions.*

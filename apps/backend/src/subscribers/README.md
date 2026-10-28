@@ -12,6 +12,10 @@ and records seller-to-buyer lineage. The source order-line ID is the lineage
 retry key, so an event retry is safe while a later resale to the same buyer is
 still recorded.
 
+`product-deleted.ts` listens for `product.deleted` and soft-deletes the linked
+Listing. Archive and restore actions therefore preserve Listing ownership and
+lineage while keeping inactive products out of operational moderation views.
+
 Subscribers handle events emitted in the Medusa application.
 
 > Learn more about Subscribers in [this documentation](https://docs.medusajs.com/learn/fundamentals/events-and-subscribers).

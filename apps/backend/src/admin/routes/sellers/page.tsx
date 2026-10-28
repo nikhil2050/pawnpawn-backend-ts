@@ -15,7 +15,8 @@ import {
   Text,
 } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useSearchParams } from "react-router-dom"
 
 type SellerCategory =
   | "celebrity"
@@ -127,7 +128,8 @@ const fetchSellers = async (
 }
 
 const SellersPage = () => {
-  const [q, setQ] = useState("")
+  const [searchParams] = useSearchParams()
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "")
   const [trust, setTrust] = useState<TrustFilter>("all")
   const [category, setCategory] = useState<CategoryFilter>("all")
   const [status, setStatus] = useState<StatusFilter>("all")
@@ -138,6 +140,11 @@ const SellersPage = () => {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    setQ(searchParams.get("q") ?? "")
+  }, [searchParams])
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["sellers", q, trust, category, status],
     queryFn: () => fetchSellers(q, trust, category, status),

@@ -204,6 +204,12 @@ Should return a JWT token.
 
 ## Step 6: Start the Dev Server
 
+Use the commands below exactly. `develop` is not an npm script in either the
+backend workspace or the repository root, so `npm run develop` will always
+return `Missing script: "develop"`.
+
+THIS SHOULD RUN:
+
 ```bash
 cd apps/backend
 
@@ -215,6 +221,18 @@ Or from the project root:
 ```bash
 npm run backend:dev
 ```
+
+If the root command reports `turbo: command not found`, install the workspace
+dependencies from the repository root first:
+
+```bash
+cd ../..
+npm install
+npm run backend:dev
+```
+
+Alternatively, bypass Turbo and start the backend directly from
+`apps/backend` with `../../node_modules/.bin/medusa develop`.
 
 Expected output:
 
@@ -265,11 +283,11 @@ API_KEY="<the token from above>"
 curl -s -H "x-publishable-api-key: $API_KEY" http://localhost:9000/store/products | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Found {d.get(\"count\",0)} products')"
 ```
 
-Expected: `{"count":17,...}` with sample data seeded (4 Medusa demo products otherwise)
+On a freshly seeded canonical database, expect the sample count documented in `SAMPLE_DATA.md`. The count changes after Admin archive/delete operations or marketplace test data, so use this request as a connectivity check rather than a fixed runtime assertion.
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `POST /admin/hq-fulfillments/:id`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the `product.created` marketplace-provisioning subscriber, and the Medusa Admin **Sellers** page at `/app/sellers`.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `GET /admin/products` (including `include_archived=true`), `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing`, `POST /admin/products/:id/marketplace-archive`, `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the product create/delete marketplace subscribers, the Medusa Admin **Sellers** page at `/app/sellers`, and unified Seller/Listing governance in `/app/products`. `/app/listings` redirects to Products.
 > **Planned:** custom `POST/PATCH /store/products`, auctions, and `/admin/lineage*`. See `API.md` → Current Implementation Status.
 
 > **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
@@ -412,8 +430,9 @@ linked product during approval, or use `REJECT` with `feedback` to set
 `listing_status: "REJECTED"` and draft the product. Re-review is supported:
 an Admin can approve a rejected Listing or reject an available one. Legacy
 `RETURN` sets a non-sold Listing to `PENDING_APPROVAL` and also drafts its
-product. The Admin UI has no Listing review page yet; test this endpoint with
-an Admin token.
+product. Open the Product detail at `http://localhost:9000/app/products` to approve or reject from
+the Admin UI. Use the endpoint directly when feedback or `EDIT_AND_APPROVE`
+is required.
 
 ### Test HQ Fulfillment Lifecycle (Implemented)
 
@@ -543,6 +562,8 @@ Run all commands from `apps/backend/` directory.
 | `CORS error` from frontend | Missing origin in CORS config | Add `http://localhost:3000` to `STORE_CORS` in `.env` |
 | `401 Unauthorized` on a protected endpoint | Not authenticated | Login first to get JWT token/cookie |
 | `EADDRINUSE: port 9000` | Another Medusa dev server is running | `pkill -f "medusa develop"`; if needed `lsof -ti:9000 \| xargs kill -9` |
+| `npm run develop` reports `Missing script: "develop"` | No `develop` script is defined | From `apps/backend`, run `npm run dev` or `../../node_modules/.bin/medusa develop`; from the root, run `npm run backend:dev` |
+| `turbo: command not found` | Root workspace dependencies are missing | From the repository root, run `npm install`, then retry `npm run backend:dev` |
 | `this.list is not a function` | Called a generic method in a `MedusaService` subclass | Use `listSellers` / `updateSellers` / `listProductLineages` etc. |
 | `seller endpoints` return 404 | Only the admin seller CRUD is implemented | Use `GET/POST/PATCH/DELETE /admin/seller*` / `/app/sellers`, or `container.resolve("seller")` / SQL for store routes; see `API.md` status table |
 | `Medusa requires Node ≥ 22.22.0` | Old Node version | `nvm install 24.15.0 && nvm use 24.15.0` |
@@ -578,6 +599,13 @@ Before considering your local setup complete, verify:
 - [ ] `medusa exec ./src/scripts/verify-sample-data.ts` passes
 - [ ] `GET /admin/seller` returns 8 sellers with an admin token (401 without one)
 - [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 8 sellers
+- [ ] Admin **Products** page shows Product → Seller → Collection → Listing Status, with Seller and Status populated from Listing rather than product metadata
+- [ ] Product status filters (All, Pending Approval, Available, Sold, Rejected) update the product list and pagination correctly
+- [ ] A Seller cell opens `/app/sellers?q=<handle>` with the matching Seller filtered
+- [ ] Product detail shows the Marketplace & Seller Governance detail widget with Listing status, feedback, reassignment, archive/restore, and inline approve/edit-and-approve/reject/return-to-pending actions; use **Customize layout** to move it to the top
+- [ ] Reassigning in that panel updates `listing.seller_id` and does not alter product metadata or lineage
+- [ ] `http://localhost:9000/app/listings` redirects to `http://localhost:9000/app/products`
+- [ ] Product detail governance panel approves/rejects a non-sold Listing and archives/restores an item
 - [ ] `POST /admin/seller` creates a seller and returns 201
 - [ ] `PATCH /admin/seller/:id` updates seller fields and returns 200
 - [ ] `DELETE /admin/seller/:id` soft-deactivates a seller (sets `is_deactivated = true`)
@@ -591,7 +619,7 @@ Before considering your local setup complete, verify:
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
 - [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
 - [ ] `POST /admin/hq-fulfillments/:id/exception` supports split dispatch and seller cancellation/refund
-- [ ] Admin UI provides the HQ exception screen and completes the UI-only test flow below
+- [ ] When the Admin HQ exception screen is implemented, it completes the UI-only test flow below
 - [ ] `POST /admin/listings/:id/review` approves to `AVAILABLE`, edit-and-approves, or rejects with feedback
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors

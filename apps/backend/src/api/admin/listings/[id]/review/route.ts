@@ -7,7 +7,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   // See documentation/AI_CONTEXT.md §5.1, §5.4, and §10.3.
   const { action, feedback, corrections, edited_data } = req.body as any
   if (!["APPROVE", "EDIT_AND_APPROVE", "REJECT", "RETURN"].includes(action)) {
-    return res.status(400).json({ message: "action must be APPROVE, EDIT_AND_APPROVE, or REJECT" })
+    return res.status(400).json({ message: "action must be APPROVE, EDIT_AND_APPROVE, REJECT, or RETURN" })
   }
   const listingService = req.scope.resolve<any>("listing")
   const listing = await listingService.retrieveListing(req.params.id)
@@ -27,9 +27,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.json({ listing: reviewed })
   }
   const edits = edited_data ?? corrections
-  if (action === "EDIT_AND_APPROVE" && !edits) {
-    return res.status(400).json({ message: "edited_data is required for EDIT_AND_APPROVE" })
-  }
+  // The inline Product panel can approve a reviewed correction even when the
+  // catalog fields were edited separately. Apply product edits only when sent.
   if (edits) await productService.updateProducts({ id: listing.product_id, ...edits })
   const reviewed = await listingService.reviewListing(listing.id, "AVAILABLE", reviewer, feedback)
   await productService.updateProducts({ id: listing.product_id, status: "published" })

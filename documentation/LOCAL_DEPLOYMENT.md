@@ -132,7 +132,7 @@ psql -h localhost -U postgres -d pawnpawn_db -c "\dt"
 
 You should see tables like: `product`, `cart`, `order`, `customer`, `address`, `user`, `api_key`, etc.
 
-> ⚠️ **Important**: Run migrations BEFORE importing custom schema. The `product` table must exist before we can add the `listing_type` column to it.
+> ⚠️ **Important**: Run migrations BEFORE importing custom schema. The native `product` table must exist so the custom `listing.product_id` foreign key can reference it; marketplace lifecycle fields remain in `listing`.
 
 ---
 
@@ -167,10 +167,11 @@ Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admi
 
 ### Load sample data (optional)
 
-Seeds 8 sellers (7 marketplace sellers plus the existing platform seller), 5 buyer accounts, 13 seller-mapped celebrity/resale listings with USD/INR prices, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
+Seeds 9 marketplace sellers (including Karan Johar and Kate Winslet), 5 buyer accounts, and 15 seller-mapped celebrity/resale listings with USD/INR prices, Medusa variant-inventory links, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 ```
 
 > Buyers must exist before seeding: the script only attaches shipping metadata and lineage to existing customers. Register them through `POST /auth/customer/emailpass/register` followed by `POST /store/customers` (or use the API keys/credentials in [`SAMPLE_DATA.md`](./SAMPLE_DATA.md)). If a buyer is missing, the lineage loop prints a `NOTICE` and skips that row.
@@ -353,7 +354,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 Expected: `7 ['beyonce', 'rihanna', 'kimkardashian', 'leonardodicaprio', 'sarah_resells', 'snoopdogg', 'dwaynejohnson']`, with `1` result for each filter above.
 
-In the browser, open `http://localhost:9000/app/sellers`. The **Sellers** sidebar page should list all 8 sellers with trust, category, verification, bio, social handle, and customer-link columns. Opening the page also logs a successful `GET /admin/seller?limit=100` request.
+In the browser, open `http://localhost:9000/app/sellers`. The **Sellers** sidebar page should list the seeded sellers with trust, category, verification, bio, social handle, and customer-link columns. Opening the page also logs a successful `GET /admin/seller?limit=100` request.
 
 Unauthenticated access should return `401`:
 
@@ -582,6 +583,27 @@ Run all commands from `apps/backend/` directory.
 
 ---
 
+## Automated Regression Test Cases
+
+Run the backend unit suite without Watchman, which avoids a local macOS Watchman permission failure in restricted shells:
+
+```bash
+cd apps/backend
+npm run test:unit -- --watchman=false
+```
+
+| Test file | Cases covered |
+|---|---|
+| `src/subscribers/__tests__/order-placed-hq-fulfillment.unit.spec.ts` | Available Listing becomes `SOLD`; native Product becomes `draft`; linked inventory becomes zero; one HQ row and one lineage row use the order-line ID; retried event does not duplicate records. |
+| `src/api/admin/listings/[id]/review/__tests__/route.unit.spec.ts` | Reject drafts the Product and records `REJECTED`; edit-and-approve persists corrections, publishes the Product, and records `AVAILABLE`. |
+
+Fixture acceptance checks after `sample-data.sql` and `marketplace_prompt_alignment.sql`:
+
+1. Karan Johar's velvet jacket is `AVAILABLE`, in `pcol_fall_drop`, and in `pcat_outerwear`.
+2. Kate Winslet's premiere heels are `AVAILABLE` and in `pcat_footwear`.
+3. Every available Listing variant has one `product_variant_inventory_item` link and one unit of available stock.
+4. Re-running either seed does not reopen a `SOLD` Listing or restore its stock.
+
 ## Testing Checklist
 
 Before considering your local setup complete, verify:
@@ -592,16 +614,16 @@ Before considering your local setup complete, verify:
 - [ ] `../../node_modules/.bin/medusa db:migrate` completed without errors (migration scripts error is expected and non-fatal)
 - [ ] `npm run db:import` completed without errors
 - [ ] `seller` and `product_lineage` tables exist in DB
-- [ ] `product` table has `listing_type` column
+- [ ] `listing` table has `listing_type` and `listing_status` columns
 - [ ] `listing` and `hq_fulfillment` tables exist in DB
 - [ ] Admin login works: `POST /auth/user/emailpass` with `admin@pawnpawn.com` / `supersecret`
 - [ ] Buyer login works: `POST /auth/customer/emailpass` with `sarah.johnson@gmail.com` / `buyer1234`
 - [ ] Dev server starts on `http://localhost:9000`
 - [ ] `GET /health` returns healthy
-- [ ] `GET /store/products` returns 17 products with the publishable key
+- [ ] `GET /store/products` returns the current `AVAILABLE` marketplace products with the publishable key (15 immediately after a fresh canonical seed)
 - [ ] `medusa exec ./src/scripts/verify-sample-data.ts` passes
-- [ ] `GET /admin/seller` returns 8 sellers with an admin token (401 without one)
-- [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists all 8 sellers
+- [ ] `GET /admin/seller` returns the seeded sellers with an admin token (401 without one)
+- [ ] Admin **Sellers** page loads at `http://localhost:9000/app/sellers` and lists the seeded sellers
 - [ ] Admin **Products** page shows Product → Seller → Collection → Listing Status, with Seller and Status populated from Listing rather than product metadata
 - [ ] Admin **Products** page displays each Product's primary native Variant SKU; products with multiple variants display `(+N more)`
 - [ ] Product status filters (All, Pending Approval, Available, Sold, Rejected) update the product list and pagination correctly

@@ -43,7 +43,9 @@ export async function processOrderPlaced(orderId: string, container: any) {
       await listings.updateListings({ id: listing.id, listing_status: "SOLD" })
       // Core Store endpoints do not know Listing state, so drafting the
       // product keeps a sold item out of both marketplace and native catalog.
-      await productService.updateProducts({ id: listing.product_id, status: "draft" })
+      // ProductModuleService requires the ID separate from its update payload.
+      // See documentation/AI_CONTEXT.md §8.5.
+      await productService.updateProducts(listing.product_id, { status: "draft" })
     }
     await lockInventory(container, item.variant_id)
 
@@ -70,7 +72,10 @@ export async function processOrderPlaced(orderId: string, container: any) {
         seller_id: listing.seller_id,
         buyer_id: order.customer_id,
         order_line_item_id: item.id,
-        price: Number(item.unit_price ?? 0) / 100,
+        // Medusa v2's price service returns the configured amount in this
+        // project's currency unit. Preserve that amount for provenance; do
+        // not apply a second minor-unit conversion. See AI_CONTEXT.md §8.5.
+        price: Number(item.unit_price ?? 0),
       })
     }
   }

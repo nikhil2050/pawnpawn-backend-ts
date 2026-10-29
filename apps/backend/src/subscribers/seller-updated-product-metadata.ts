@@ -20,8 +20,9 @@ export default async function sellerUpdatedProductMetadata({
 
   for (const listing of listings) {
     const product = await productService.retrieveProduct(listing.product_id)
-    await productService.updateProducts({
-      id: product.id,
+    // Metadata is a compatibility/search projection; ownership stays on Listing.
+    // See documentation/AI_CONTEXT.md §5.3.
+    await productService.updateProducts(product.id, {
       metadata: {
         ...(product.metadata ?? {}),
         seller_id: seller.id,

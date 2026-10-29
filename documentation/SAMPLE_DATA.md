@@ -1,6 +1,6 @@
 # Sample Data
 
-The canonical seed represents the celebrity-to-fan marketplace described in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record): 8 sellers, 13 seller-mapped published products/listings, 13 unique marketplace inventory units, 5 buyers, and 8 lineage records. Four upstream Medusa demo products remain as `draft` records without a marketplace seller. Native categories, collections, and options are loaded by `marketplace_prompt_alignment.sql`.
+The canonical seed represents the celebrity-to-fan marketplace described in [`AI_CONTEXT.md`](./AI_CONTEXT.md#marketplace-architecture-decision-record): 9 sellers, 15 seller-mapped published products/listings, 15 unique marketplace inventory units, 5 buyers, and 8 lineage records. Four upstream Medusa demo products remain as `draft` records without a marketplace seller. Native categories, collections, and options are loaded by `marketplace_prompt_alignment.sql`.
 
 The canonical seed creates Listing rows from the fixture mapping. If an older local database contains a catalog Product with seller metadata but no Listing row, treat it as a legacy migration issue: repair the normalized Listing once, then use the Listing module for all subsequent ownership and moderation operations. Do not add runtime metadata fallbacks.
 
@@ -19,7 +19,7 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-da
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 ```
 
-The script is idempotent — safe to run multiple times.
+The script is idempotent — safe to run multiple times. It creates Medusa's required variant-to-inventory links and raw numeric inventory values, and preserves runtime Listing status, seller reassignment, and sold inventory instead of reopening a completed sale.
 
 Prerequisite: buyers are registered through the Store API (so they have real `emailpass` credentials). The seed only attaches their shipping metadata and purchase history.
 
@@ -36,7 +36,7 @@ Prerequisite: buyers are registered through the Store API (so they have real `em
 | Europe region | `reg_01M5J0TH63KAP4HJN34ERGDC5N` (`eur`) |
 | Default sales channel | `sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2` |
 
-## Sellers (7)
+## Sellers (9)
 
 | Handle | Store | Trust | Category | Notes |
 |--------|-------|-------|----------|-------|
@@ -46,6 +46,8 @@ Prerequisite: buyers are registered through the Store API (so they have real `em
 | `rihanna` | Fenty x Rihanna | trusted | musician | Tour outfits |
 | `leonardodicaprio` | Leo Eco Collection | trusted | celebrity | Film memorabilia |
 | `beyonce` | Beyonce Archive | trusted | musician | Tour costumes |
+| `karanjohar` | Karan Johar Archive | trusted | celebrity | Fall-drop premiere wardrobe |
+| `katewinslet` | Kate Winslet Archive | trusted | celebrity | Film-premiere memorabilia |
 | `sarah_resells` | Sarah's Closet | **untrusted** | other | Buyer-turned-seller resale |
 
 All sellers are `VERIFIED`. `sarah_resells` demonstrates the difference between verification and trust: a verified buyer can sell, but starts as `untrusted`.
@@ -56,7 +58,7 @@ Allowed values: `seller_trust` = `trusted` | `untrusted`; `seller_category` = `c
 
 1. Open `http://localhost:9000/app` and sign in with `admin@pawnpawn.com` / `supersecret`.
 2. Select **Sellers** in the sidebar (direct URL: `http://localhost:9000/app/sellers`).
-3. The page lists all 8 sellers with store, handle, category, trust, verification, bio, social handle, and customer link.
+3. The page lists the seeded sellers with store, handle, category, trust, verification, bio, social handle, and customer link.
 
 The page calls `GET /admin/seller` with the admin session. The same data is available over REST:
 
@@ -116,9 +118,9 @@ curl -s -X POST http://localhost:9000/store/customers \
 
 Do not `INSERT INTO customer` directly — that skips the `emailpass` identity and the buyer cannot log in.
 
-## Products (17)
+## Products (19)
 
-12 celebrity listings, 1 buyer-turned-seller resale, plus 4 Medusa demo products.
+14 celebrity listings, 1 buyer-turned-seller resale, plus 4 Medusa demo products.
 
 ### Celebrity listings
 
@@ -136,6 +138,8 @@ Do not `INSERT INTO customer` directly — that skips the `emailpass` identity a
 | Leonardo DiCaprio Oscar Speech Notes | leonardodicaprio | 88th Academy Awards (2016) | 18,000 | 1,494,000 |
 | Beyonce Formation Tour Boots | beyonce | Formation World Tour (2016) | 55,000 | 4,565,000 |
 | Beyonce Lemonade Dress | beyonce | *Lemonade* visual album (2016) | 38,000 | 3,154,000 |
+| Karan Johar Fall Drop Velvet Jacket | karanjohar | Karan Johar Fall Drop (2026) | 65,000 | 5,395,000 |
+| Kate Winslet Premiere Heels | katewinslet | Film premiere (2026) | 48,000 | 3,984,000 |
 
 ### Buyer-turned-seller resale
 

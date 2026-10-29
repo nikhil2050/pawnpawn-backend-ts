@@ -2,7 +2,7 @@
 -- PawnPawn Sample Data
 -- ----------------------------------------------------------------------------
 -- Adds:
---   * Product variants + USD/INR prices for the 12 celebrity listings
+--   * Product variants + USD/INR prices for the 14 celebrity listings
 --   * Default sales-channel links so the Store API returns them
 --   * Seller metadata on products (seller_id / seller_handle / provenance)
 --   * Product lineage (previous owners / purchase history)
@@ -48,6 +48,14 @@ VALUES
    'ra_connect_beyonce_006', 'trusted', 'musician', '@beyonce',
    'Grammy-winning artist. Selling tour costumes and personal memorabilia.',
    'VERIFIED', NOW(), NOW()),
+  ('seller_karanjohar', 'karanjohar', 'Karan Johar Archive', 'https://picsum.photos/seed/karanjohar/400/400',
+   'ra_connect_karan_008', 'trusted', 'celebrity', '@karanjohar',
+   'Filmmaker and style icon sharing pieces from landmark premieres and film sets.',
+   'VERIFIED', NOW(), NOW()),
+  ('seller_katewinslet', 'katewinslet', 'Kate Winslet Archive', 'https://picsum.photos/seed/katewinslet/400/400',
+   'ra_connect_kate_009', 'trusted', 'celebrity', '@kate.winslet.official',
+   'Actor-curated screen and red-carpet memorabilia with documented provenance.',
+   'VERIFIED', NOW(), NOW()),
   -- Buyer-turned-seller: purchased from Snoop Dogg, now resells from her archive
   ('seller_sarah_resells', 'sarah_resells', 'Sarah''s Closet', 'https://picsum.photos/seed/sarahresells/400/400',
    'ra_connect_sarah_007', 'untrusted', 'other', '@sarahj',
@@ -82,6 +90,12 @@ INSERT INTO product (id, title, handle, description, status, created_at, updated
 VALUES
   ('prod_sarah_001', 'Snoop Dogg Signed Doggystyle Vinyl', 'snoop-dogg-signed-doggystyle-vinyl',
    'Original Doggystyle vinyl signed by Snoop Dogg. Purchased from Snoop Dogg''s official PawnPawn store and resold from a private collection.',
+   'published', NOW(), NOW()),
+  ('prod_karan_001', 'Karan Johar Fall Drop Velvet Jacket', 'karan-johar-fall-velvet-jacket',
+   'Bespoke velvet dinner jacket worn by Karan Johar at a fall film premiere.',
+   'published', NOW(), NOW()),
+  ('prod_kate_001', 'Kate Winslet Premiere Heels', 'kate-winslet-premiere-heels',
+   'Evening heels worn by Kate Winslet during a major film premiere.',
    'published', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
@@ -92,7 +106,9 @@ DECLARE
   v_pset_id      TEXT;
   v_pvps_id      TEXT;
   v_sc_id        TEXT := 'sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2';
-  v_seller_id    UUID;
+  -- The Seller module accepts opaque text IDs. Older fixtures include UUIDs
+  -- while canonical seed rows use stable text IDs. See documentation/AI_CONTEXT.md §4.3.
+  v_seller_id    TEXT;
   v_seller_name  TEXT;
   v_usd          NUMERIC;
   v_inr          NUMERIC;
@@ -123,6 +139,10 @@ BEGIN
        'Formation World Tour (2016)',                     'Excellent', 'Custom stage boots worn during the Formation World Tour.'),
       ('prod_beyonce_002', 'beyonce',         'US S',    38000,  'beyonce-lemonade-dress',
        'Lemonade visual album (2016)',                    'Excellent', 'Yellow dress worn in the Lemonade visual album.'),
+      ('prod_karan_001',   'karanjohar',      'One Size', 65000, 'karan-johar-fall-velvet-jacket',
+       'Karan Johar Fall Drop (2026)',                    'Excellent', 'Bespoke velvet dinner jacket from Karan Johar''s fall drop.'),
+      ('prod_kate_001',    'katewinslet',     'EU 39',    48000, 'kate-winslet-premiere-heels',
+       'Film premiere (2026)',                            'Like New',  'Evening heels worn at a major film premiere.'),
       ('prod_sarah_001',   'sarah_resells',   'One Size', 1500,   'snoop-dogg-signed-doggystyle-vinyl',
        'Purchased from Snoop Dogg (2026)',                'Very Good', 'Signed Doggystyle vinyl purchased from Snoop Dogg''s official store, resold by a verified buyer.')
     ) AS t(product_id, seller_handle, variant_title, price_usd, seed, event_name, condition, provenance)
@@ -195,6 +215,22 @@ BEGIN
      WHERE id = r.product_id;
   END LOOP;
 END $$;
+
+-- Use native Medusa taxonomy and collection relations for the two investor
+-- demo drops; marketplace ownership remains solely on their Listing records.
+-- See documentation/AI_CONTEXT.md §4.2 and §5.3.
+UPDATE product
+   SET collection_id = 'pcol_fall_drop', updated_at = NOW()
+ WHERE id = 'prod_karan_001';
+UPDATE product
+   SET collection_id = 'pcol_01M5R49FDC4K1SATPFKVGQ08MT', updated_at = NOW()
+ WHERE id = 'prod_kate_001';
+INSERT INTO product_category_product (product_id, product_category_id)
+SELECT mapping.product_id, category.id
+FROM (VALUES ('prod_karan_001', 'pcat_outerwear'), ('prod_kate_001', 'pcat_footwear'))
+  AS mapping(product_id, category_id)
+JOIN product_category category ON category.id = mapping.category_id
+ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 3. Buyer shipping metadata (buyers themselves are created via Store API)
@@ -289,10 +325,12 @@ SELECT
 FROM product p
 WHERE p.metadata->>'seller_id' IS NOT NULL
 ON CONFLICT (product_id) DO UPDATE SET
-  seller_id = EXCLUDED.seller_id,
-  listing_status = EXCLUDED.listing_status,
-  listing_type = EXCLUDED.listing_type,
-  item_condition = EXCLUDED.item_condition,
+  -- A seed rerun may repair old fixture attributes, but it must never undo
+  -- a runtime sale, moderation decision, or seller reassignment.
+  -- See documentation/AI_CONTEXT.md §4.3 and §8.5.
+  seller_id = COALESCE(listing.seller_id, EXCLUDED.seller_id),
+  listing_type = COALESCE(listing.listing_type, EXCLUDED.listing_type),
+  item_condition = COALESCE(listing.item_condition, EXCLUDED.item_condition),
   updated_at = NOW();
 
 -- Keep the four upstream Medusa demo products available for framework checks,
@@ -308,6 +346,7 @@ DECLARE
   v_location_id TEXT;
   r RECORD;
   v_inventory_id TEXT;
+  v_stocked_quantity NUMERIC;
 BEGIN
   SELECT id INTO v_location_id
   FROM stock_location
@@ -322,13 +361,16 @@ BEGIN
 
   FOR r IN
     SELECT pv.id AS variant_id, pv.product_id, pv.sku, pv.title AS variant_title,
-           p.title AS product_title, p.metadata->>'seller_handle' AS seller_handle
+           p.title AS product_title, p.metadata->>'seller_handle' AS seller_handle,
+           l.listing_status
     FROM product_variant pv
     JOIN product p ON p.id = pv.product_id
+    JOIN listing l ON l.product_id = p.id AND l.deleted_at IS NULL
     WHERE p.metadata->>'seller_id' IS NOT NULL
       AND pv.deleted_at IS NULL
   LOOP
     v_inventory_id := 'inv_' || r.variant_id;
+    v_stocked_quantity := CASE WHEN r.listing_status = 'SOLD' THEN 0 ELSE 1 END;
 
     INSERT INTO inventory_item
       (id, sku, title, description, requires_shipping, metadata, created_at, updated_at)
@@ -345,11 +387,31 @@ BEGIN
       updated_at = NOW();
 
     INSERT INTO inventory_level
-      (id, inventory_item_id, location_id, stocked_quantity, reserved_quantity, incoming_quantity, created_at, updated_at)
+      (id, inventory_item_id, location_id, stocked_quantity, reserved_quantity, incoming_quantity,
+       raw_stocked_quantity, raw_reserved_quantity, raw_incoming_quantity, created_at, updated_at)
     VALUES
-      ('invlevel_' || r.variant_id, v_inventory_id, v_location_id, 1, 0, 0, NOW(), NOW())
+      ('invlevel_' || r.variant_id, v_inventory_id, v_location_id, v_stocked_quantity, 0, 0,
+       jsonb_build_object('value', v_stocked_quantity::TEXT, 'precision', 20),
+       jsonb_build_object('value', '0', 'precision', 20),
+       jsonb_build_object('value', '0', 'precision', 20), NOW(), NOW())
     ON CONFLICT (inventory_item_id, location_id) WHERE deleted_at IS NULL DO UPDATE SET
-      stocked_quantity = GREATEST(inventory_level.stocked_quantity, 1),
+      stocked_quantity = EXCLUDED.stocked_quantity,
+      reserved_quantity = 0,
+      raw_stocked_quantity = EXCLUDED.raw_stocked_quantity,
+      raw_reserved_quantity = jsonb_build_object('value', '0', 'precision', 20),
+      raw_incoming_quantity = jsonb_build_object('value', '0', 'precision', 20),
+      updated_at = NOW();
+
+    -- Medusa resolves saleable stock through this module link. Inventory
+    -- items and levels alone do not make a managed variant purchasable.
+    -- See documentation/AI_CONTEXT.md §4.2 and §8.5.
+    INSERT INTO product_variant_inventory_item
+      (id, variant_id, inventory_item_id, required_quantity, created_at, updated_at)
+    VALUES
+      ('invlink_' || r.variant_id, r.variant_id, v_inventory_id, 1, NOW(), NOW())
+    ON CONFLICT (variant_id, inventory_item_id) DO UPDATE SET
+      required_quantity = EXCLUDED.required_quantity,
+      deleted_at = NULL,
       updated_at = NOW();
 
     UPDATE product_variant

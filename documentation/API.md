@@ -1652,7 +1652,7 @@ curl -s -H "x-publishable-api-key: $PK" \
   "http://localhost:9000/store/products?limit=100&region_id=$US&fields=id,title,metadata,*variants,*variants.calculated_price"
 ```
 
-Returns the 17 seeded listings. `metadata` contains `seller_id`, `seller_handle`, `seller_name`, `event`, `condition`, and `provenance`.
+Returns the 15 initially available marketplace listings. Runtime sales, review, and archive actions change this count. `metadata` contains compatibility display fields (`seller_id`, `seller_handle`, `seller_name`, `event`, `condition`, and `provenance`); Listing remains the ownership source of truth.
 
 Buyer login (implemented):
 

@@ -589,4 +589,4 @@ If you're coming from Java/JDBC/Hibernate, here's a mapping:
 
 ---
 
-*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, Listing and HQ fulfillment tables, sample data (8 sellers / 5 buyers / 17 products / 13 listings / 13 unique marketplace inventory units / 8 lineage rows).*
+*Keep this file updated as the schema evolves. Last sync: Oct 2026 — Medusa v2.22.0, text-ID custom tables with Medusa timestamps, seller trust/category fields, Listing and HQ fulfillment tables, sample data (9 sellers / 5 buyers / 19 products / 15 listings / 15 unique marketplace inventory units / 8 lineage rows).*

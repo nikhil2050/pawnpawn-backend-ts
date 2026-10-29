@@ -9,7 +9,7 @@ You are an expert full-stack engineer implementing marketplace core features and
 1. **Native Medusa models:** Use Medusa's built-in `ProductCategory`, `ProductCollection`, and `ProductOption` / `ProductOptionValue`.
 2. **Unified accounts:** Sellers and buyers share the Medusa `Customer` table identity. A `Seller` links one-to-one through `customer_id`.
 3. **Dedicated custom modules:** Use the custom `seller`, `listing`, `lineage`, and `hq_fulfillment` modules through Medusa v2 utilities. Do not alter Medusa core product tables.
-4. **Universal product provisioning:** The `product.created` subscriber handles products created through the Admin UI or Seller API. It ensures a standardized SKU (`CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`), one-of-one inventory (`manage_inventory = true`, `inventory_quantity = 1`), and an initial `PENDING_APPROVAL` listing.
+4. **Universal product provisioning:** The `product.created` subscriber handles products created through the Admin UI or Seller API. It ensures a standardized SKU (`CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`), `manage_inventory = true`, `allow_backorder = false`, one stocked inventory unit through Medusa's variant-inventory link, and an initial `PENDING_APPROVAL` Listing.
 5. **Strict commit convention:** Every commit, code description, and pull request summary must use `<type>(<scope>): <description>`. Allowed types are `feat`, `fix`, `refactor`, `perf`, `docs`, and `chore`. Allowed scopes are `products`, `seller`, `listing`, `lineage`, `hq`, `cart`, `auth`, `admin`, `db`, and `config`.
 6. **SOLID boundaries:** Keep routes limited to HTTP/auth concerns, put checkout use cases in `src/workflows`, keep module services focused on their own data, and make subscribers idempotent integration adapters. Depend on Medusa module interfaces through the container instead of coupling modules to each other.
 
@@ -185,6 +185,7 @@ cd apps/backend
 
 # Load PawnPawn sample data (celebrities, buyers, listings, lineage)
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
 ```
 
 ## Medusa Package Docs (`node_modules`)

@@ -233,8 +233,10 @@ export default async function productCreated({
 
     try {
       if (product.metadata?.seller_id !== seller.id) {
-        await productService.updateProducts({
-          id: product.id,
+        // Keep denormalized display metadata in sync without changing Listing,
+        // which remains the marketplace ownership source of truth.
+        // See documentation/AI_CONTEXT.md §5.3.
+        await productService.updateProducts(product.id, {
           metadata: {
             ...(product.metadata ?? {}),
             seller_id: seller.id,

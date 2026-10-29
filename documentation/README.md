@@ -31,7 +31,7 @@ Index for all project documentation. The backend is a Medusa v2.22.0 service in 
 - Product creation normalizes handles server-side and allocates `-2`, `-3`, and later suffixes for duplicates. Admin product creation enforces one selected value per option and shows the final persisted handle in the success notification.
 - The `product.created` subscriber applies marketplace defaults to Seller and Admin products: standard SKU, one-unit inventory, and an idempotent `PENDING_APPROVAL` Listing. Admin products without seller metadata use the system Seller.
 - The Admin Dashboard startup patch is idempotent: it injects the Products Seller, SKU, Inventory, and Listing Status columns without modifying Medusa core tables. If a stale Vite bundle reports `Importing a module script failed`, restart `medusa develop` so the corrected bundle is rebuilt.
-- The canonical sample seed defines 8 sellers, 5 buyers, 17 products (13 marketplace products), native fashion taxonomy/options, and 8 lineage records. Runtime data is mutable; use the verification commands in `SAMPLE_DATA.md` instead of treating those counts as the current local database state.
+- The canonical sample seed defines 9 sellers, 5 buyers, 19 products (15 marketplace products), native fashion taxonomy/options, and 8 lineage records. Runtime data is mutable; use the verification commands in `SAMPLE_DATA.md` instead of treating those counts as the current local database state.
 
 ## Quick Start
 

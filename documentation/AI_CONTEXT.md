@@ -17,7 +17,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
 1. Use native `ProductCategory` for taxonomies, `ProductCollection` for campaigns, and `ProductOption`/`ProductOptionValue` for attributes.
 2. Sellers and buyers share Medusa `Customer`; each Seller links 1:1 through `customer_id`.
 3. Use custom `seller`, `listing`, `lineage`, and `hq_fulfillment` modules via Medusa utils; never alter native product tables.
-4. The `product.created` subscriber provisions Admin/API products: SKU `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`, `manage_inventory=true`, `allow_backorder=false`, quantity `1`, and an idempotent `PENDING_APPROVAL` Listing. Admin products use the system Seller fallback. Purchases set quantity to `0` while retaining SKU/history.
+4. The `product.created` subscriber provisions Admin/API products: SKU `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`, `manage_inventory=true`, `allow_backorder=false`, and one stocked unit through Medusa's variant-inventory link, plus an idempotent `PENDING_APPROVAL` Listing. Admin products use the system Seller fallback. Purchases set stocked inventory to `0` while retaining SKU/history.
 5. Listing lifecycle: `PENDING_APPROVAL` → `AVAILABLE` → `SOLD`; rejection returns feedback and resubmission resets pending.
 6. Mixed carts create independent HQ fulfillment rows per order line: `WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED` → `DISPATCHED` → `DELIVERED`.
 7. MVP checkout is the placeholder `POST /store/purchase`; payout release follows delivery.
@@ -782,7 +782,7 @@ For a reviewer-facing explanation of the Products versus Listings screens, see [
 GET /admin/products and GET /admin/products/:id
   → inject marketplace_listing from Listing(product_id) → Seller(seller_id)
   → Listing: id, listing_status, admin_feedback, reviewer; Seller: id, store_name, handle, avatar_url
-  → always load native variants.id, variants.sku, and variants.inventory_quantity
+  → always load native variants.id, variants.sku, and linked Medusa inventory levels
   → expose marketplace_skus: primary_sku, additional_count, and values; Variant remains SKU source of truth
   → optional GET filters: listing_status=PENDING_APPROVAL|AVAILABLE|SOLD|REJECTED and include_archived=true
   → include_archived returns native soft-deleted Products with Listing and Seller data; UI renders INACTIVE
@@ -945,7 +945,8 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ## 11. 🧪 Testing Strategy
 
-- **Unit tests**: `src/**/__tests__/**/*.unit.spec.ts` → `npm run test:unit`
+- **Unit tests**: `src/**/__tests__/**/*.unit.spec.ts` → `npm run test:unit -- --watchman=false` in restricted/CI environments.
+- **Current checkout regressions**: `order-placed-hq-fulfillment.unit.spec.ts` covers SOLD/draft/zero-stock/HQ/lineage transitions and retry idempotency; `review/route.unit.spec.ts` covers reject/draft and edit-and-approve/publish transitions.
 - **Module integration**: `src/modules/*/__tests__/**` → `npm run test:integration:modules`
 - **HTTP integration**: `integration-tests/http/*.spec.ts` → `npm run test:integration:http`
 

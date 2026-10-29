@@ -107,7 +107,7 @@ Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admi
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 ```
 
-This loads 8 sellers (7 marketplace sellers plus the existing platform seller), links `sarah_resells` to Sarah Johnson's customer account, creates 13 normalized seller Listings, stocks one inventory unit per marketplace variant, and preserves 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) and the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record).
+This loads 9 marketplace sellers (including Karan Johar and Kate Winslet), links `sarah_resells` to Sarah Johnson's customer account, creates 15 normalized seller Listings, stocks one inventory unit per marketplace variant, and preserves 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) and the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record).
 
 Verify the modules against it:
 

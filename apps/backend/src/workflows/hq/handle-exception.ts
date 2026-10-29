@@ -139,7 +139,9 @@ export const executeHqException = async (
 
   await restoreInventory(container, item.variant_id)
   await listing.updateListings({ id: fulfillment.listing_id, listing_status: "AVAILABLE" })
-  await product.updateProducts({ id: fulfillment.product_id, status: "published" })
+  // Restore native catalog visibility with ProductModuleService's id-and-data API.
+  // See documentation/AI_CONTEXT.md §8.5 and §10.3.
+  await product.updateProducts(fulfillment.product_id, { status: "published" })
   await seller.updateSellers({
     id: fulfillment.seller_id,
     seller_trust: "untrusted",

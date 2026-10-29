@@ -22,15 +22,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     // a listing that an administrator has removed from marketplace review.
     // See documentation/AI_CONTEXT.md §4.2 and §5.1.
     const targetStatus = action === "REJECT" ? "REJECTED" : "PENDING_APPROVAL"
-    await productService.updateProducts({ id: listing.product_id, status: "draft" })
+    // ProductModuleService requires (productId, changes); passing one object
+    // treats it as a selector and silently applies no lifecycle update.
+    // See documentation/AI_CONTEXT.md §8.7 and §10.3.
+    await productService.updateProducts(listing.product_id, { status: "draft" })
     const reviewed = await listingService.reviewListing(listing.id, targetStatus, reviewer, feedback)
     return res.json({ listing: reviewed })
   }
   const edits = edited_data ?? corrections
   // The inline Product panel can approve a reviewed correction even when the
   // catalog fields were edited separately. Apply product edits only when sent.
-  if (edits) await productService.updateProducts({ id: listing.product_id, ...edits })
+  if (edits) await productService.updateProducts(listing.product_id, edits)
   const reviewed = await listingService.reviewListing(listing.id, "AVAILABLE", reviewer, feedback)
-  await productService.updateProducts({ id: listing.product_id, status: "published" })
+  await productService.updateProducts(listing.product_id, { status: "published" })
   res.json({ listing: reviewed })
 }

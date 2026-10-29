@@ -250,6 +250,8 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Idempotent SQL schema and prompt-alignment migration are available for local setup.
 - [x] **Implemented** — Sample sellers, products, listings, inventory, options, categories, collections, and lineage are populated locally.
 - [ ] **Partial** — Automated integration coverage for seller isolation, mixed carts, review audit, resale, delivery, and payout release remains to be added.
+- [ ] **Pending verification** — Run the live MVP smoke path after starting the backend on `localhost:9000`: authenticated seller creates a celebrity drop, public catalog filters it by native category/collection/options, admin approves it, and an authenticated buyer completes `POST /store/purchase`. Unit coverage passed on 2026-10-30, but this end-to-end HTTP check could not run because the local server was stopped.
+- [ ] **Pending tooling** — Add/configure the `eslint` package so `npm run lint` provides a real static-analysis gate; Medusa currently exits with a warning that linting is skipped.
 - [ ] **Planned** — Production observability, webhook reconciliation, and background retry jobs for payment/HQ/payout adapters.
 
 <a id="marketplace-architecture-decision-record"></a>
@@ -949,6 +951,8 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 - **Current checkout regressions**: `order-placed-hq-fulfillment.unit.spec.ts` covers SOLD/draft/zero-stock/HQ/lineage transitions and retry idempotency; `review/route.unit.spec.ts` covers reject/draft and edit-and-approve/publish transitions.
 - **Module integration**: `src/modules/*/__tests__/**` → `npm run test:integration:modules`
 - **HTTP integration**: `integration-tests/http/*.spec.ts` → `npm run test:integration:http`
+- **Pending live smoke test**: Start `../../node_modules/.bin/medusa develop`, then exercise seller creation → `GET /store/products` native filters → admin review → authenticated `POST /store/purchase`. This validates wiring across HTTP, Medusa services, inventory links, and event handling; it was not executable on 2026-10-30 because port `9000` had no running backend.
+- **Pending lint gate**: Add `eslint` before treating `npm run lint` as a validation signal. Medusa otherwise reports that linting was skipped and exits unsuccessfully.
 
 ---
 

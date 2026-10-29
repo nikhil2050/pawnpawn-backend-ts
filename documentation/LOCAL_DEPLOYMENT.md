@@ -604,6 +604,21 @@ Fixture acceptance checks after `sample-data.sql` and `marketplace_prompt_alignm
 3. Every available Listing variant has one `product_variant_inventory_item` link and one unit of available stock.
 4. Re-running either seed does not reopen a `SOLD` Listing or restore its stock.
 
+## Pending MVP Stability Verification
+
+The focused unit suite passed on 2026-10-30, covering admin review and the
+post-order fulfillment/lineage handler. Run this live HTTP smoke path whenever
+the backend is available to validate all MVP boundaries together:
+
+1. Start the server with `../../node_modules/.bin/medusa develop` and confirm `curl http://localhost:9000/health` succeeds.
+2. Sign in as an active Seller and create a celebrity drop through `POST /store/seller/listings` (or `/store/seller/products`).
+3. Confirm `GET /store/products` hides its `PENDING_APPROVAL` Listing; approve it through `POST /admin/listings/:id/review`; then confirm category, collection, and option filters return it.
+4. Sign in as a buyer and call `POST /store/purchase` for the single variant. Confirm the Listing is `SOLD`, stock is `0`, and exactly one HQ fulfillment and lineage record exist for the order line.
+
+This check was pending when documented because no process was listening on
+`localhost:9000`. Also install/configure `eslint` before relying on `npm run lint`:
+Medusa currently skips linting and exits with a missing-package warning.
+
 ## Testing Checklist
 
 Before considering your local setup complete, verify:

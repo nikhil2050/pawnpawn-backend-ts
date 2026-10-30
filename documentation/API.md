@@ -1598,6 +1598,19 @@ Content-Type: application/json
 }
 ```
 
+### 6.3.1 Retrieve an Editable Seller Listing (Implemented)
+
+`GET /store/seller/listings/:id` requires the authenticated Seller and returns
+only their Listing plus the Product fields required by the Seller Studio edit
+form (`id`, `title`, `description`, `handle`). It does not expose another
+Seller's Listing or use public catalog filtering, so rejected items can be
+edited safely before resubmission.
+
+`PATCH /store/seller/listings/:id` currently updates title, description, and
+condition, then returns the Listing to `PENDING_APPROVAL`. Price, category,
+collection, options, and images remain unchanged until the Seller update
+contract is expanded transactionally.
+
 ### 6.4 Purchase Product
 
 > **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated customer and accepts one or more unique variants. The server calculates each price from the Medusa price set in the requested region; clients cannot set a line price. It locks all requested Listings, revalidates `AVAILABLE` status and stock, creates a Medusa order through `createOrderWorkflow`, performs a successful dummy capture, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. A real payment provider and durable reservation/outbox transaction remain follow-up work; public lineage is available at `GET /store/products/:id/lineage`.

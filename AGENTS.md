@@ -96,7 +96,7 @@ Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backen
 │           └── modules/          # Feature UI: cart, checkout, products, account, order...
 ├── documentation/
 │   ├── README.md                 # Documentation index / status / quick start
-│   ├── AGENTS.md                 # This file
+│   ├── ...                       # Reference documentation (this AGENTS.md is at repository root)
 │   ├── AI_CONTEXT.md             # Full project context for LLMs
 │   ├── API.md                    # OpenAPI spec + endpoint documentation
 │   ├── CLAUDE.md                 # Claude config (reads AGENTS.md)

@@ -166,7 +166,7 @@ apps/
 
 This repo is set up for AI coding agents such as Claude Code, Cursor, and Codex:
 
-- [`documentation/AGENTS.md`](./documentation/AGENTS.md) holds the project's commands, conventions, and off-limits paths. [`documentation/CLAUDE.md`](./documentation/CLAUDE.md) points to it.
+- [`AGENTS.md`](./AGENTS.md) holds the project's commands, conventions, and off-limits paths. [`documentation/CLAUDE.md`](./documentation/CLAUDE.md) points to it.
 - Installed `@medusajs/*` packages ship their own `AGENTS.md` in `node_modules`, documenting the API of the exact version you have installed.
 - Install the [Medusa agent skills](https://docs.medusajs.com/learn/introduction/build-with-llms-ai/agentic-skills) and [MCP server](https://docs.medusajs.com/learn/introduction/build-with-llms-ai/mcp-server) for documentation-backed answers:
 

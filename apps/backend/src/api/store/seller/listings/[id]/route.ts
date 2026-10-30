@@ -1,6 +1,35 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
+/**
+ * Returns the authenticated seller's editable Listing and its own Product
+ * fields. This prevents the Seller Studio from guessing Product data or using
+ * public catalog routes for rejected items. See documentation/AI_CONTEXT.md.
+ */
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const sellerService = req.scope.resolve<any>("seller")
+  const [seller] = await sellerService.listSellers({
+    customer_id: (req as any).auth_context?.actor_id,
+    is_deactivated: false,
+  }, { take: 1 })
+  if (!seller) return res.status(403).json({ message: "An active seller profile is required" })
+
+  const listingService = req.scope.resolve<any>("listing")
+  const listing = await listingService.retrieveListing(req.params.id)
+  if (listing.seller_id !== seller.id) return res.status(403).json({ message: "You can only view your own listings" })
+
+  const product = await req.scope.resolve<any>(Modules.PRODUCT).retrieveProduct(listing.product_id)
+  res.json({
+    listing,
+    product: {
+      id: product.id,
+      title: product.title,
+      description: product.description,
+      handle: product.handle,
+    },
+  })
+}
+
 export async function PATCH(req: MedusaRequest, res: MedusaResponse) {
   const sellerService = req.scope.resolve<any>("seller")
   const [seller] = await sellerService.listSellers({ customer_id: (req as any).auth_context?.actor_id, is_deactivated: false }, { take: 1 })

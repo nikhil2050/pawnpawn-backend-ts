@@ -110,7 +110,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
         │       │   │   ├── store/products/route.ts                # GET /store/products (AVAILABLE catalog)
         │       │   │   ├── store/purchase/route.ts                # POST /store/purchase (dummy checkout)
-        │       │   │   ├── store/seller/listings/[id]/route.ts    # PATCH /store/seller/listings/:id
+        │       │   │   ├── store/seller/listings/[id]/route.ts    # GET/PATCH own seller Listing
         │       │   │   └── store/products/[id]/lineage/route.ts   # GET /store/products/:id/lineage
         │       │   │   ├── admin/custom/route.ts # Placeholder only
         │       │   │   ├── admin/seller/route.ts # GET/POST /admin/seller
@@ -295,7 +295,7 @@ PawnPawn is a hub-and-spoke celebrity-to-fan marketplace. Celebrities submit uni
 
 ### 5.4 Implemented backend surface
 
-- Seller: `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`.
+- Seller: `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET/POST /store/seller/listings`, `GET/PATCH /store/seller/listings/:id`, `POST /store/seller/products`.
 - Public seller: `GET /store/sellers/:handle`.
 - Public lineage: `GET /store/products/:id/lineage`.
 - Admin listings: `GET /admin/listings?status=PENDING_APPROVAL|AVAILABLE|SOLD|REJECTED&seller_id=<id>`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`.
@@ -662,6 +662,7 @@ CURRENT: sellerService.createSellers({ handle, store_name, razorpay_account_id, 
 IMPLEMENTED: GET /store/products, GET /store/products/:id (Medusa core)
 IMPLEMENTED: GET /store/sellers/:handle (public seller profile + available products)
 IMPLEMENTED: GET/POST /store/seller/listings and POST /store/seller/products (seller listing CRUD)
+IMPLEMENTED: GET /store/seller/listings/:id (own Listing + editable Product summary)
 IMPLEMENTED: PATCH /store/seller/listings/:id (own listings only)
 IMPLEMENTED: product.created subscriber (SKU, one-unit inventory, seller fallback, and Listing provisioning for Seller/Admin product creation)
 IMPLEMENTED: GET /admin/listings?status=&seller_id=, POST /admin/listings/:id/review (admin review)

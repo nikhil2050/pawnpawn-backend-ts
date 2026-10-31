@@ -948,6 +948,19 @@ Generated CRUD: `listSellers` / `createSellers` / `updateSellers` / `deleteSelle
 
 ## 11. 🧪 Testing Strategy
 
+### Mandatory rule for every code change
+
+Every backend code modification or addition must add or update relevant test
+cases in the same change. Routes, workflows, module services, subscribers,
+inventory transitions, authentication boundaries, and database behavior need
+focused automated coverage at the closest available layer. A change is not
+complete until its focused tests and applicable integration tests are run.
+
+If the repository or environment cannot support a test, document the precise
+missing harness, dependency, database, or service and add a repeatable manual
+validation checklist. Never silently omit test coverage. Documentation-only
+changes still require `git diff --check`.
+
 - **Unit tests**: `src/**/__tests__/**/*.unit.spec.ts` → `npm run test:unit -- --watchman=false` in restricted/CI environments.
 - **Current checkout regressions**: `order-placed-hq-fulfillment.unit.spec.ts` covers SOLD/draft/zero-stock/HQ/lineage transitions and retry idempotency; `review/route.unit.spec.ts` covers reject/draft and edit-and-approve/publish transitions.
 - **Module integration**: `src/modules/*/__tests__/**` → `npm run test:integration:modules`

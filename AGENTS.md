@@ -301,6 +301,17 @@ refactor(hq): decouple fulfillment status per order line item
 chore(config): register custom modules in medusa-config.js
 ```
 
+### Mandatory Test-Case Rule
+
+Every backend code modification or addition must add or update relevant test
+cases in the same change. Prefer focused unit tests for workflows, services,
+subscribers, and route decisions, plus module or HTTP integration tests when a
+database, Medusa module, event, inventory transition, or authentication boundary
+is involved. Run the focused tests and the applicable full validation commands
+before handoff. If the current repository or environment cannot support a test,
+document the exact gap and a repeatable manual validation checklist; do not
+silently omit coverage.
+
 ## Common Mistakes
 
 - Running storefront commands without checking that `apps/storefront/` exists.

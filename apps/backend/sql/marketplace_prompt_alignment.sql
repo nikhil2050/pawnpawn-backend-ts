@@ -84,7 +84,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- Native Medusa campaign collection used by the seeded fall drop.
 INSERT INTO product_collection (id, title, handle, created_at, updated_at)
-VALUES ('pcol_fall_drop', 'Karan Johar Fall Drop', 'karan-johar-fall-drop', NOW(), NOW())
+VALUES ('pcol_fall_drop', 'Emma Watson Fall Drop', 'emma-watson-fall-drop', NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, handle = EXCLUDED.handle, updated_at = NOW();
 
 -- Native Medusa option definitions and values.

@@ -63,7 +63,7 @@ status constraint without removing historical Listing records.
 ### Verify custom tables were created
 ```sql
 \dt
--- Expected output includes: seller, product_lineage
+-- Expected output includes: seller, product_lineage, listing, hq_fulfillment
 -- (product table is managed by Medusa migrations)
 ```
 

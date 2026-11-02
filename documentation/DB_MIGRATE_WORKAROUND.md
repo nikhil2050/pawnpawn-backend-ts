@@ -107,13 +107,22 @@ Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admi
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 ```
 
-This loads 9 marketplace sellers (including Karan Johar and Kate Winslet), links `sarah_resells` to Sarah Johnson's customer account, creates 15 normalized seller Listings, stocks one inventory unit per marketplace variant, and preserves 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) and the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record).
+This loads 9 marketplace sellers (including Emma Watson and Kate Winslet), links the active `emmawatson` Seller to the local Emma Watson demo Customer, deactivates `sarah_resells` while preserving its history, creates 15 normalized seller Listings, stocks one inventory unit per marketplace variant, and preserves 8 lineage records. See [`SAMPLE_DATA.md`](./SAMPLE_DATA.md) and the [Marketplace Architecture Decision Record](./AI_CONTEXT.md#marketplace-architecture-decision-record).
 
-Verify the modules against it:
+### Auth identity repair checklist
+
+For a renamed Seller demo account, do not update only `seller.store_name` or
+`customer.email`. Confirm the complete chain in `AI_CONTEXT.md` → **Seller login
+identity consistency**: Seller `customer_id`, Customer email, and emailpass
+`provider_identity.entity_id` must agree. Apply any email change transactionally,
+then verify the auth endpoint and `/store/seller/me` with the same token. Never
+delete the Customer, Seller, Listing, or lineage rows during this repair.
 
 ```bash
 ../../node_modules/.bin/medusa exec ./src/scripts/verify-sample-data.ts
 ```
+
+Verify the modules against it with the command above.
 
 ### Step 5: Admin user already exists
 

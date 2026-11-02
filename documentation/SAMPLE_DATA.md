@@ -46,7 +46,7 @@ Prerequisite: buyers are registered through the Store API (so they have real `em
 | `rihanna` | Fenty x Rihanna | trusted | musician | Tour outfits |
 | `leonardodicaprio` | Leo Eco Collection | trusted | celebrity | Film memorabilia |
 | `beyonce` | Beyonce Archive | trusted | musician | Tour costumes |
-| `karanjohar` | Karan Johar Archive | trusted | celebrity | Fall-drop premiere wardrobe |
+| `emmawatson` | Emma Watson Archive | trusted | celebrity | Fall-drop premiere wardrobe |
 | `katewinslet` | Kate Winslet Archive | trusted | celebrity | Film-premiere memorabilia |
 | `sarah_resells` | Sarah's Closet | **untrusted** | other | Buyer-turned-seller resale |
 
@@ -72,7 +72,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   "http://localhost:9000/admin/seller?trust=untrusted&category=other"
 ```
 
-> The Medusa **Customers** page still shows only the 5 buyers. Six celebrity sellers have no `customer_id`; `sarah_resells` is the only seller linked to a buyer account (Sarah Johnson). Sellers are a separate custom module, so they appear on the **Sellers** page instead.
+> The Medusa **Customers** page shows the 5 buyers plus the Emma Watson Seller Studio demo Customer. `emmawatson` is linked to the existing local demo login `emma.watson@pawnpawn.demo`; `sarah_resells` is deactivated and retained only for historical lineage. Sellers are a separate custom module, so they appear on the **Sellers** page instead.
 
 ## Buyers (5)
 
@@ -138,7 +138,7 @@ Do not `INSERT INTO customer` directly — that skips the `emailpass` identity a
 | Leonardo DiCaprio Oscar Speech Notes | leonardodicaprio | 88th Academy Awards (2016) | 18,000 | 1,494,000 |
 | Beyonce Formation Tour Boots | beyonce | Formation World Tour (2016) | 55,000 | 4,565,000 |
 | Beyonce Lemonade Dress | beyonce | *Lemonade* visual album (2016) | 38,000 | 3,154,000 |
-| Karan Johar Fall Drop Velvet Jacket | karanjohar | Karan Johar Fall Drop (2026) | 65,000 | 5,395,000 |
+| Emma Watson Fall Drop Velvet Jacket | emmawatson | Emma Watson Fall Drop (2026) | 65,000 | 5,395,000 |
 | Kate Winslet Premiere Heels | katewinslet | Film premiere (2026) | 48,000 | 3,984,000 |
 
 ### Buyer-turned-seller resale

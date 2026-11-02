@@ -147,7 +147,7 @@ Seller identity is a Medusa Customer identity plus one Seller profile. Product o
      marketplace alignment work so future agents preserve the same boundaries.
      It is the canonical reference for the changes described below. -->
 
-- Medusa owns `ProductCategory`, `ProductCollection`, `ProductOption`, and `ProductOptionValue`. Seed data uses native fashion categories (`Apparel`, `Outerwear`, `Footwear`) and the `Karan Johar Fall Drop` collection.
+- Medusa owns `ProductCategory`, `ProductCollection`, `ProductOption`, and `ProductOptionValue`. Seed data uses native fashion categories (`Apparel`, `Outerwear`, `Footwear`) and the `Emma Watson Fall Drop` collection.
 - Seller, Listing, ProductLineage, and HQFulfillment are custom modules registered in `medusa-config.js`. Listing is the seller-to-product source of truth; Medusa `product` is not extended with marketplace ownership columns.
 - The authenticated seller listing route resolves the active Seller profile from the customer session, then uses Medusa's `createProductsWorkflow` to create a draft product with native category/collection/options. The `product.created` subscriber provisions every product created through either the Seller API or native Admin UI: it assigns or repairs standardized variant SKUs, enables one-of-one inventory, and creates an idempotent linked `PENDING_APPROVAL` Listing. Creation metadata supplies the initial Seller context and compatibility display fields only; Listing remains the ownership source of truth. Admin-created products fall back to the `system` Seller and `CELEB-SYSTEM-GEN-[SHORT_UUID]` SKU pattern. The Seller route is available at `POST /store/seller/products`; `POST /store/seller/listings` remains an alias.
 - Admin product creation derives the Handle from Title as lowercase words joined with hyphens. Hyphens are removed from the Title input and rejected by the Admin/Seller product middleware; generated handles are the only place this separator is introduced.
@@ -179,7 +179,7 @@ Status values: **Implemented** = available in the repository and local database;
 
 - [x] **Implemented** — Medusa Product remains the catalog and commerce primitive.
 - [x] **Implemented** — Native ProductCategory is used for Apparel, Outerwear, and Footwear.
-- [x] **Implemented** — Native ProductCollection is used for the Karan Johar Fall Drop campaign.
+- [x] **Implemented** — Native ProductCollection is used for the Emma Watson Fall Drop campaign.
 - [x] **Implemented** — Native ProductOption/ProductOptionValue stores Size and Condition values.
 - [x] **Implemented** — Marketplace products carry seller display metadata for compatibility/search presentation.
 - [x] **Implemented** — Marketplace product schemas are not extended with seller ownership or listing lifecycle columns.
@@ -551,6 +551,60 @@ NODE_ENV=development
 | Default sales channel | `sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2` |
 | Sample buyers | 5 accounts, password `buyer1234` (see `SAMPLE_DATA.md`) |
 
+### Demo login credentials
+
+These credentials are for local development only. Never reuse them in a shared
+or production environment.
+
+| Role | Email | Password | Profile / status |
+|---|---|---|---|
+| Admin | `admin@pawnpawn.com` | `supersecret` | Admin dashboard access |
+| Original seller | `emma.watson@pawnpawn.demo` | `seller1234` | `@emmawatson`, Emma Watson Archive; active Seller Studio login |
+| Buyer | `sarah.johnson@gmail.com` | `buyer1234` | Sample buyer; Sarah's reseller profile is deactivated for MVP |
+| Buyer | `mike.chen@outlook.com` | `buyer1234` | Sample buyer |
+| Buyer | `emily.rodriguez@yahoo.com` | `buyer1234` | Sample buyer |
+| Buyer | `james.wilson@icloud.com` | `buyer1234` | Sample buyer |
+| Buyer | `olivia.martinez@gmail.com` | `buyer1234` | Sample buyer |
+
+The original-seller MVP permits the Emma Watson demo Seller profile using the
+existing `emma.watson@pawnpawn.demo` Customer login above. The email remains a
+legacy local-demo identifier until the auth identity is explicitly migrated.
+The `sarah_resells` Seller profile is retained for historical lineage but marked
+`is_deactivated = true` and must not be used for new seller onboarding.
+
+### Seller login identity consistency
+
+When renaming or replacing a demo Seller, update all identity layers together:
+
+1. `seller.customer_id` must point to the intended Medusa `customer.id`.
+2. `customer.email` must equal the email submitted to
+   `POST /auth/customer/emailpass`.
+3. The emailpass `provider_identity.entity_id` must equal that same email, with
+   `provider = 'emailpass'` and `auth_identity_id` belonging to the Customer.
+4. Update `customer.first_name` / `last_name` for display consistency.
+
+The Emma migration exposed the common failure mode: the Seller and Customer
+were renamed to Emma, but `provider_identity.entity_id` still contained
+`karan.johar@pawnpawn.demo`. The Customer lookup appeared correct while login
+failed because emailpass resolves the provider identity first. Verify all four
+layers before documenting credentials. Preserve the Seller ID, Listing rows,
+and lineage; only identity fields should change.
+
+Read-only verification:
+
+```sql
+SELECT s.handle, s.customer_id, c.email, c.first_name, c.last_name,
+       pi.provider, pi.entity_id
+FROM seller s
+JOIN customer c ON c.id = s.customer_id
+JOIN provider_identity pi ON pi.entity_id = c.email AND pi.provider = 'emailpass'
+WHERE s.handle = 'emmawatson';
+```
+
+If an email is intentionally changed, update `customer.email` and the matching
+emailpass `provider_identity.entity_id` in one transaction, then test both
+`POST /auth/customer/emailpass` and authenticated `GET /store/seller/me`.
+
 > The 13 seeded PawnPawn listings have USD and INR prices only (the 4 Medusa demo products include EUR). Querying a seeded listing with the Europe region returns no `calculated_price` until EUR prices are added.
 
 Start / stop:
@@ -847,7 +901,9 @@ Authorization: Bearer <jwt_token>
 - Or: `Authorization: Bearer <jwt_token>`
 
 ### 9.4 Sample Buyer Credentials
-All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`.
+All sample buyers use password `buyer1234`. See `SAMPLE_DATA.md`. The active
+Emma Watson original-seller demo login is `emma.watson@pawnpawn.demo` /
+`seller1234`, mapped to `@emmawatson`.
 
 ---
 

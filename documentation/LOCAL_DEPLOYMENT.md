@@ -167,7 +167,7 @@ Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admi
 
 ### Load sample data (optional)
 
-Seeds 9 marketplace sellers (including Karan Johar and Kate Winslet), 5 buyer accounts, and 15 seller-mapped celebrity/resale listings with USD/INR prices, Medusa variant-inventory links, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
+Seeds 9 marketplace sellers (including Emma Watson and Kate Winslet), 5 buyer accounts, and 15 seller-mapped celebrity/resale listings with USD/INR prices, Medusa variant-inventory links, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
@@ -599,7 +599,7 @@ npm run test:unit -- --watchman=false
 
 Fixture acceptance checks after `sample-data.sql` and `marketplace_prompt_alignment.sql`:
 
-1. Karan Johar's velvet jacket is `AVAILABLE`, in `pcol_fall_drop`, and in `pcat_outerwear`.
+1. Emma Watson's velvet jacket is `AVAILABLE`, in `pcol_fall_drop`, and in `pcat_outerwear`.
 2. Kate Winslet's premiere heels are `AVAILABLE` and in `pcat_footwear`.
 3. Every available Listing variant has one `product_variant_inventory_item` link and one unit of available stock.
 4. Re-running either seed does not reopen a `SOLD` Listing or restore its stock.

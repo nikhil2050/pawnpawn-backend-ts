@@ -2,7 +2,7 @@
 -- PawnPawn Sample Data
 -- ----------------------------------------------------------------------------
 -- Adds:
---   * Product variants + USD/INR prices for the 14 celebrity listings
+--   * Product variants + EUR default / INR dual-listed prices for 14 listings
 --   * Default sales-channel links so the Store API returns them
 --   * Seller metadata on products (seller_id / seller_handle / provenance)
 --   * Product lineage (previous owners / purchase history)
@@ -79,7 +79,7 @@ UPDATE seller
    AND (SELECT id FROM customer WHERE email = 'sarah.johnson@gmail.com') IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- 2. Variants, prices, sales-channel links and seller metadata
+-- 2. Variants, EUR/INR prices, sales-channel links and seller metadata
 -- Listing type is stored in the custom Listing module; this seed deliberately
 -- does not add marketplace columns to Medusa's native product table.
 -- See documentation/AI_CONTEXT.md §4.2 and §5.3.
@@ -110,7 +110,7 @@ DECLARE
   -- while canonical seed rows use stable text IDs. See documentation/AI_CONTEXT.md §4.3.
   v_seller_id    TEXT;
   v_seller_name  TEXT;
-  v_usd          NUMERIC;
+  v_eur          NUMERIC;
   v_inr          NUMERIC;
 BEGIN
   FOR r IN
@@ -145,10 +145,12 @@ BEGIN
        'Film premiere (2026)',                            'Like New',  'Evening heels worn at a major film premiere.'),
       ('prod_sarah_001',   'sarah_resells',   'One Size', 1500,   'snoop-dogg-signed-doggystyle-vinyl',
        'Purchased from Snoop Dogg (2026)',                'Very Good', 'Signed Doggystyle vinyl purchased from Snoop Dogg''s official store, resold by a verified buyer.')
-    ) AS t(product_id, seller_handle, variant_title, price_usd, seed, event_name, condition, provenance)
+    ) AS t(product_id, seller_handle, variant_title, price_eur, seed, event_name, condition, provenance)
   LOOP
-    v_usd := r.price_usd;
-    v_inr := ROUND(r.price_usd * 83, 2);
+    -- Seed amounts are minor units. Every fixture is EU-listed by default;
+    -- INR is an intentionally dual-listed demo price. See AI_CONTEXT.md §8.9.
+    v_eur := r.price_eur;
+    v_inr := ROUND(r.price_eur * 90, 0);
 
     SELECT id, store_name INTO v_seller_id, v_seller_name
       FROM seller WHERE handle = r.seller_handle;
@@ -183,14 +185,29 @@ BEGIN
         (id, title, price_set_id, currency_code, raw_amount, rules_count,
          amount, created_at, updated_at)
       VALUES
-        ('price_usd_' || r.product_id, NULL, v_pset_id, 'usd',
-         jsonb_build_object('value', TRIM(TO_CHAR(v_usd, 'FM999999990.00')), 'precision', 20),
-         0, v_usd, NOW(), NOW()),
+        ('price_eur_' || r.product_id, NULL, v_pset_id, 'eur',
+         jsonb_build_object('value', TRIM(TO_CHAR(v_eur, 'FM999999990.00')), 'precision', 20),
+         0, v_eur, NOW(), NOW()),
         ('price_inr_' || r.product_id, NULL, v_pset_id, 'inr',
          jsonb_build_object('value', TRIM(TO_CHAR(v_inr, 'FM999999990.00')), 'precision', 20),
          0, v_inr, NOW(), NOW())
       ON CONFLICT (id) DO NOTHING;
     END IF;
+
+    -- Older runs created USD/INR-only price sets. Add an EUR price for the
+    -- selected product's existing Variant without changing Medusa tables.
+    SELECT pvp.price_set_id INTO v_pset_id
+      FROM product_variant pv
+      JOIN product_variant_price_set pvp ON pvp.variant_id = pv.id
+     WHERE pv.product_id = r.product_id AND pv.deleted_at IS NULL
+     LIMIT 1;
+    INSERT INTO price (id, title, price_set_id, currency_code, raw_amount, rules_count, amount, created_at, updated_at)
+    SELECT 'price_eur_' || r.product_id, NULL, v_pset_id, 'eur',
+           jsonb_build_object('value', TRIM(TO_CHAR(v_eur, 'FM999999990.00')), 'precision', 20),
+           0, v_eur, NOW(), NOW()
+     WHERE v_pset_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM price WHERE price_set_id = v_pset_id AND currency_code = 'eur' AND deleted_at IS NULL)
+    ON CONFLICT (id) DO NOTHING;
 
     -- Link to the Default Sales Channel so /store/products returns it
     INSERT INTO product_sales_channel

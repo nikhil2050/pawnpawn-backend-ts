@@ -167,11 +167,13 @@ Look for: `seller_id`, `product_id`, `listing_status`, `listing_type`, and `admi
 
 ### Load sample data (optional)
 
-Seeds 9 marketplace sellers (including Emma Watson and Kate Winslet), 5 buyer accounts, and 15 seller-mapped celebrity/resale listings with USD/INR prices, Medusa variant-inventory links, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
+Seeds 9 marketplace sellers (including Emma Watson and Kate Winslet), 5 buyer accounts, and 15 seller-mapped celebrity/resale listings with EUR default pricing plus INR dual-listed pricing, Medusa variant-inventory links, inventory levels, and purchase lineage. Four upstream Medusa demo products remain drafts without marketplace sellers:
 
 ```bash
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
+# Existing databases created before EUR support need this idempotent backfill:
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/regional-pricing-backfill.sql
 ```
 
 > Buyers must exist before seeding: the script only attaches shipping metadata and lineage to existing customers. Register them through `POST /auth/customer/emailpass/register` followed by `POST /store/customers` (or use the API keys/credentials in [`SAMPLE_DATA.md`](./SAMPLE_DATA.md)). If a buyer is missing, the lineage loop prints a `NOTICE` and skips that row.
@@ -288,7 +290,7 @@ On a freshly seeded canonical database, expect the sample count documented in `S
 
 ### Custom Routes: Current Status
 
-> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `GET /admin/lineage/:product_id`, `GET /admin/products` (including `include_archived=true`), `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing`, `POST /admin/products/:id/marketplace-archive`, `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/purchase` (dummy checkout), the product create/delete marketplace subscribers, the Medusa Admin **Sellers** page at `/app/sellers`, and unified Seller/Listing governance in `/app/products`. `/app/listings` redirects to Products.
+> **Implemented:** `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`), `GET /admin/listings`, `POST /admin/listings/:id/review`, `GET /admin/seller/:id/listings`, `GET /admin/lineage/:product_id`, `GET /admin/products` (including `include_archived=true`), `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing`, `POST /admin/products/:id/marketplace-archive`, `POST /admin/hq-fulfillments/:id`, `POST /admin/hq-fulfillments/:id/exception`, `POST /store/seller/onboard`, `GET/PATCH /store/seller/me`, `GET /store/sellers/:handle`, `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id`, `GET /store/products/:id/lineage`, `POST /store/payment-intent`, `POST /store/purchase` (verified Stripe checkout), the product create/delete marketplace subscribers, the Medusa Admin **Sellers** page at `/app/sellers`, and unified Seller/Listing governance in `/app/products`. `/app/listings` redirects to Products.
 > **Planned:** custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes. See `API.md` → Current Implementation Status.
 
 > **Product form behavior:** Admin and Seller product creation rejects hyphens in titles, derives lowercase hyphenated handles, allocates a numeric suffix when a handle already exists, and accepts only one value per option. The Admin success notification shows the final handle. The Dashboard patch is applied automatically by `predev`, `prestart`, and `postinstall`.
@@ -391,28 +393,41 @@ curl -s -X POST http://localhost:9000/store/seller/onboard \
 curl -s http://localhost:9000/store/sellers/snoopdogg
 ```
 
-### Test Dummy Purchase Checkout (Implemented MVP)
+### Test Stripe PaymentIntent Checkout (Implemented MVP)
 
-Use a customer token and an `AVAILABLE` listing's variant ID. The endpoint
-calculates the server-side regional price, locks the requested Listings, then
-creates the order and completes per-line inventory, HQ, and lineage updates
-before it responds.
+Set a valid Stripe **test** `STRIPE_SECRET_KEY` in `apps/backend/.env` and use a
+Customer token plus an `AVAILABLE` Listing Variant. First create an Intent;
+confirm its `client_secret` with Stripe Elements or Stripe's test tooling; then
+submit the succeeded `payment_intent_id`. The backend calculates the regional
+price, locks requested Listings, verifies the Intent with Stripe, and only then
+creates the order and its per-line inventory, HQ, and lineage updates.
 
 ```bash
 TOKEN=<customer_token>
-curl -s -X POST http://localhost:9000/store/purchase \
+curl -s -X POST http://localhost:9000/store/payment-intent \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
     "items": [{"variant_id":"variant_01M...","quantity":1}],
     "region_id":"reg_01M5SSC7P6CPJDG955B1564RQT",
     "sales_channel_id":"sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2",
-    "shipping_address":{"first_name":"Sarah","last_name":"Johnson","address_1":"100 Market Street","city":"Los Angeles","country_code":"us","postal_code":"90001"}
+    "idempotency_key":"local-stripe-test-attempt"
   }'
 ```
 
-Verify the Listing is `SOLD`, its inventory level is zero, and one
-`hq_fulfillment` and `product_lineage` row exists for the order line.
+Use the returned `client_secret` to confirm the Stripe test card, then call
+`POST /store/purchase` with the same `items`, `region_id`, and returned
+`payment_intent_id`. Verify the Listing is `SOLD`, its inventory level is zero,
+and one `hq_fulfillment` and `product_lineage` row exists for the order line.
+
+#### No-key investor demo
+
+When the backend runs in development and `STRIPE_SECRET_KEY` is empty, the
+Buyer app shows **Demo payment mode** instead of Stripe card fields. Complete
+the demo purchase after obtaining the buyer token; the backend returns and
+verifies a deterministic `demo_pi_...` identity while retaining server pricing,
+inventory, Listing, HQ, and lineage checks. This path is disabled in
+production and must never be described as a Stripe charge.
 
 ### Test Admin Listing Review (Implemented)
 
@@ -660,14 +675,14 @@ Before considering your local setup complete, verify:
 - [ ] `GET /store/sellers/:handle` returns active products plus the sold `archive`
 - [ ] `GET /store/products/:id/lineage` returns chronological ownership history without buyer PII
 - [ ] `POST /store/seller/listings` creates a listing for the authenticated seller
-- [ ] `POST /store/purchase` returns a dummy captured payment and creates per-line HQ/lineage records
+- [ ] `POST /store/payment-intent` returns a server-priced Stripe Intent; confirmed `POST /store/purchase` creates per-line HQ/lineage records
 - [ ] `POST /admin/hq-fulfillments/:id/exception` supports split dispatch and seller cancellation/refund
 - [ ] When the Admin HQ exception screen is implemented, it completes the UI-only test flow below
 - [ ] `POST /admin/listings/:id/review` approves to `AVAILABLE`, edit-and-approves, or rejects with feedback
 - [ ] `POST /admin/hq-fulfillments/:id` advances an HQ fulfillment
 - [ ] Admin UI loads at `http://localhost:9000/app` without errors
 
-> Remaining custom routes (custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes) are not implemented yet. Seller onboarding/profile management, seller listings, public and per-product Admin lineage inspection, dummy purchase checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
+> Remaining custom routes (custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes) are not implemented yet. Seller onboarding/profile management, seller listings, public and per-product Admin lineage inspection, Stripe PaymentIntent checkout, admin listing review, and HQ fulfillment transitions are implemented and should be included in validation.
 
 ### UI-only HQ exception test (pending Admin screen)
 

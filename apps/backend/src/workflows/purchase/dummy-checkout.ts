@@ -1,6 +1,19 @@
 import { createOrderWorkflow } from "@medusajs/medusa/core-flows"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { processOrderPlaced } from "../../subscribers/order-placed-hq-fulfillment"
+import { RegionalContextError, resolveRegionalContext } from "../../utils/regional-context"
+import { calculateRegionalVariantPrices } from "../../utils/regional-pricing"
+import {
+  assertSucceededStripePayment,
+  assertSucceededDemoPayment,
+  createDemoPaymentIntent,
+  createPaymentFingerprint,
+  createStripePaymentIntent,
+  isDemoPaymentIntent,
+  isDemoPaymentMode,
+  retrieveStripePaymentIntent,
+  StripePaymentError,
+} from "../../services/stripe-payment"
 
 export type PurchaseItemInput = {
   variant_id?: string
@@ -10,8 +23,11 @@ export type PurchaseItemInput = {
 export type DummyCheckoutInput = {
   items?: PurchaseItemInput[]
   region_id?: string
+  currency_code?: string
   sales_channel_id?: string
   shipping_address?: Record<string, unknown>
+  payment_intent_id?: string
+  idempotency_key?: string
 }
 
 export class PurchaseError extends Error {
@@ -21,16 +37,18 @@ export class PurchaseError extends Error {
 }
 
 const getRegionAndSalesChannel = async (container: any, input: DummyCheckoutInput) => {
-  const regionService = container.resolve(Modules.REGION) as any
   const salesChannelService = container.resolve(Modules.SALES_CHANNEL) as any
-  const [region] = input.region_id
-    ? await regionService.listRegions({ id: input.region_id }, { take: 1 })
-    : await regionService.listRegions({}, { take: 1 })
+  let region
+  try {
+    region = await resolveRegionalContext(container, input)
+  } catch (error) {
+    if (error instanceof RegionalContextError) throw new PurchaseError(error.status, error.message)
+    throw error
+  }
   const [salesChannel] = input.sales_channel_id
     ? await salesChannelService.listSalesChannels({ id: input.sales_channel_id }, { take: 1 })
     : await salesChannelService.listSalesChannels({}, { take: 1 })
 
-  if (!region) throw new PurchaseError(400, "A valid region_id is required")
   if (!salesChannel) throw new PurchaseError(400, "A valid sales_channel_id is required")
   return { region, salesChannel }
 }
@@ -53,35 +71,15 @@ const validateItems = (input: DummyCheckoutInput) => {
   return items as Array<{ variantId: string; quantity: 1 }>
 }
 
-const priceVariants = async (container: any, variantIds: string[], currencyCode: string) => {
-  const link = container.resolve(ContainerRegistrationKeys.LINK) as any
-  const pricing = container.resolve(Modules.PRICING) as any
-  const productPricingLink = link.getLinkModule(
-    Modules.PRODUCT,
-    "variant_id",
-    Modules.PRICING,
-    "price_set_id"
-  )
-  const priceLinks = await productPricingLink.list(
-    { variant_id: variantIds },
-    { select: ["variant_id", "price_set_id"] }
-  )
-  if (priceLinks.length !== variantIds.length) {
-    throw new PurchaseError(400, "Each variant must have a configured price")
-  }
-
-  const calculated = await pricing.calculatePrices(
-    { id: priceLinks.map((entry: any) => entry.price_set_id) },
-    { context: { currency_code: currencyCode } }
-  )
-  const calculatedByPriceSet = new Map<string, any>((calculated as any[]).map((price) => [price.id, price]))
+const priceVariants = async (container: any, variantIds: string[], region: { id: string; currency_code: string }) => {
+  const prices = await calculateRegionalVariantPrices(container, variantIds, region)
   const priceByVariant = new Map<string, number>()
-  for (const linkEntry of priceLinks) {
-    const amount = calculatedByPriceSet.get(linkEntry.price_set_id)?.calculated_amount
-    if (amount == null || Number.isNaN(Number(amount))) {
-      throw new PurchaseError(400, `No ${currencyCode} price is configured for variant ${linkEntry.variant_id}`)
+  for (const variantId of variantIds) {
+    const amount = prices.get(variantId)?.calculated_amount
+    if (amount == null || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+      throw new PurchaseError(400, `No non-zero ${region.currency_code} price is configured for variant ${variantId}`)
     }
-    priceByVariant.set(linkEntry.variant_id, Number(amount))
+    priceByVariant.set(variantId, Number(amount))
   }
   return priceByVariant
 }
@@ -144,17 +142,115 @@ const getListingsForVariants = async (container: any, variantIds: string[]) => {
   return { variantsById, listingByVariant }
 }
 
+export type CheckoutQuote = {
+  items: Array<{ variantId: string; quantity: 1 }>
+  region: { id: string; currency_code: string }
+  salesChannel: { id: string }
+  variantsById: Map<string, any>
+  prices: Map<string, number>
+  total: number
+  itemFingerprint: string
+}
+
+/**
+ * Calculates the only amount Stripe may receive. It is shared by Intent
+ * creation and final order placement so browser prices are never trusted.
+ * See documentation/AI_CONTEXT.md, "Stripe PaymentIntent checkout".
+ */
+export const getCheckoutQuote = async (
+  container: any,
+  customerId: string,
+  input: DummyCheckoutInput
+): Promise<CheckoutQuote> => {
+  const items = validateItems(input)
+  const { region, salesChannel } = await getRegionAndSalesChannel(container, input)
+  const { variantsById } = await getListingsForVariants(container, items.map((item) => item.variantId))
+  await assertStocked(container, items.map((item) => item.variantId))
+  const prices = await priceVariants(container, items.map((item) => item.variantId), region)
+  const total = items.reduce((sum, item) => sum + (prices.get(item.variantId) ?? 0), 0)
+  if (!Number.isInteger(total) || total <= 0) {
+    throw new PurchaseError(400, "A positive regional total is required")
+  }
+  return {
+    items,
+    region,
+    salesChannel,
+    variantsById,
+    prices,
+    total,
+    itemFingerprint: createPaymentFingerprint(customerId, region.id, items.map((item) => item.variantId)),
+  }
+}
+
+export const createCheckoutPaymentIntent = async (
+  container: any,
+  customerId: string,
+  input: DummyCheckoutInput
+) => {
+  const quote = await getCheckoutQuote(container, customerId, input)
+  const paymentInput = {
+    amount: quote.total,
+    currency_code: quote.region.currency_code,
+    customer_id: customerId,
+    region_id: quote.region.id,
+    item_fingerprint: quote.itemFingerprint,
+  }
+  if (isDemoPaymentMode()) {
+    const intent = createDemoPaymentIntent(paymentInput)
+    return {
+      payment_intent_id: intent.id,
+      amount: quote.total,
+      currency_code: quote.region.currency_code,
+      provider: "demo" as const,
+    }
+  }
+  try {
+    const intent = await createStripePaymentIntent({
+      ...paymentInput,
+      idempotency_key: input.idempotency_key,
+    })
+    return {
+      payment_intent_id: intent.id,
+      client_secret: intent.client_secret!,
+      amount: quote.total,
+      currency_code: quote.region.currency_code,
+      provider: "stripe" as const,
+    }
+  } catch (error) {
+    if (error instanceof StripePaymentError) throw new PurchaseError(error.status, error.message)
+    throw error
+  }
+}
+
 /**
  * Coordinates the MVP checkout use case. The route only handles HTTP concerns;
  * this function owns marketplace validation, pricing, locking, order creation,
- * and the shared post-order lifecycle transition. See AI_CONTEXT.md §8.5.
+ * and the shared post-order lifecycle transition. See AI_CONTEXT.md,
+ * "Stripe PaymentIntent checkout".
  */
-export const executeDummyCheckout = async (
+export const executeStripeCheckout = async (
   container: any,
   customerId: string,
   input: DummyCheckoutInput
 ) => {
   const items = validateItems(input)
+  if (!input.payment_intent_id) {
+    throw new PurchaseError(400, "payment_intent_id is required after Stripe confirmation")
+  }
+  const orderService = container.resolve(Modules.ORDER) as any
+  // Handle the common retry after an HTTP timeout. This must happen before
+  // checking AVAILABLE because the first completion may already have sold it.
+  const [existingOrder] = await orderService.listOrders(
+    { metadata: { stripe_payment_intent_id: input.payment_intent_id } },
+    { take: 1 }
+  )
+  if (existingOrder) {
+    if (existingOrder.customer_id !== customerId) {
+      throw new PurchaseError(403, "Stripe payment does not belong to this customer")
+    }
+    await processOrderPlaced(existingOrder.id, container)
+    return existingOrder
+  }
   const { region, salesChannel } = await getRegionAndSalesChannel(container, input)
   const initial = await getListingsForVariants(container, items.map((item) => item.variantId))
   const locking = container.resolve(Modules.LOCKING) as any
@@ -163,22 +259,48 @@ export const executeDummyCheckout = async (
     .sort()
 
   return locking.execute(lockKeys, async () => {
+    // A concurrent request may have completed this same Intent while this
+    // request waited for the Listing lock.
+    const [completedOrder] = await orderService.listOrders(
+      { metadata: { stripe_payment_intent_id: input.payment_intent_id } },
+      { take: 1 }
+    )
+    if (completedOrder) {
+      if (completedOrder.customer_id !== customerId) {
+        throw new PurchaseError(403, "Stripe payment does not belong to this customer")
+      }
+      await processOrderPlaced(completedOrder.id, container)
+      return completedOrder
+    }
     // Re-read under the lock: a competing checkout may have sold the item
     // between the initial lookup and lock acquisition.
-    const { variantsById } = await getListingsForVariants(
-      container,
-      items.map((item) => item.variantId)
-    )
-    await assertStocked(container, items.map((item) => item.variantId))
-    const prices = await priceVariants(container, items.map((item) => item.variantId), region.currency_code)
+    const quote = await getCheckoutQuote(container, customerId, input)
+    const expectedPayment = {
+      amount: quote.total,
+      currency_code: quote.region.currency_code,
+      customer_id: customerId,
+      region_id: quote.region.id,
+      item_fingerprint: quote.itemFingerprint,
+    }
+    try {
+      if (isDemoPaymentIntent(input.payment_intent_id!)) {
+        assertSucceededDemoPayment(input.payment_intent_id!, expectedPayment)
+      } else {
+        const stripeIntent = await retrieveStripePaymentIntent(input.payment_intent_id!)
+        assertSucceededStripePayment(stripeIntent, expectedPayment)
+      }
+    } catch (error) {
+      if (error instanceof StripePaymentError) throw new PurchaseError(error.status, error.message)
+      throw error
+    }
     const orderItems = items.map((item) => {
-      const variant = variantsById.get(item.variantId)
+      const variant = quote.variantsById.get(item.variantId)
       return {
         variant_id: variant.id,
         product_id: variant.product_id,
         title: variant.title ?? "Marketplace item",
         quantity: 1,
-        unit_price: prices.get(variant.id),
+        unit_price: quote.prices.get(variant.id),
       }
     })
 
@@ -190,6 +312,7 @@ export const executeDummyCheckout = async (
         items: orderItems,
         shipping_address: input.shipping_address,
         status: "pending",
+        metadata: { stripe_payment_intent_id: input.payment_intent_id },
       } as any,
     })
 
@@ -197,3 +320,7 @@ export const executeDummyCheckout = async (
     return order
   }, { timeout: 10, expire: 60 })
 }
+
+// Kept temporarily for imports outside the HTTP route while callers migrate
+// to the explicit Stripe name. See documentation/AI_CONTEXT.md.
+export const executeDummyCheckout = executeStripeCheckout

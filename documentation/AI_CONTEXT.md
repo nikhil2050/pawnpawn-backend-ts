@@ -20,7 +20,7 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
 4. The `product.created` subscriber provisions Admin/API products: SKU `CELEB-[HANDLE]-[CAT_PREFIX]-[SHORT_UUID]`, `manage_inventory=true`, `allow_backorder=false`, and one stocked unit through Medusa's variant-inventory link, plus an idempotent `PENDING_APPROVAL` Listing. Admin products use the system Seller fallback. Purchases set stocked inventory to `0` while retaining SKU/history.
 5. Listing lifecycle: `PENDING_APPROVAL` → `AVAILABLE` → `SOLD`; rejection returns feedback and resubmission resets pending.
 6. Mixed carts create independent HQ fulfillment rows per order line: `WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ` → `AUTHENTICATED_AND_PACKED` → `DISPATCHED` → `DELIVERED`.
-7. MVP checkout is the placeholder `POST /store/purchase`; payout release follows delivery.
+7. Stripe checkout uses `POST /store/payment-intent` for a server-priced Intent, then `POST /store/purchase` verifies Stripe `succeeded` state before order/HQ/lineage changes. Local development without Stripe keys uses a clearly labelled deterministic demo payment; production never does. Payout release follows delivery.
 8. Commits and code explanations use `<type>(<scope>): <short imperative description>`. Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `chore`. Scopes: `products`, `seller`, `listing`, `lineage`, `hq`, `cart`, `auth`, `admin`, `db`, `config`.
 
 ## 1. 🎯 Project Overview
@@ -109,7 +109,8 @@ Implement marketplace core features in `pawnpawn-backend-ts` with Medusa v2, Pos
         │       │   │   ├── store/seller/listings/route.ts         # GET/POST /store/seller/listings
         │       │   │   ├── store/seller/products/route.ts         # POST /store/seller/products alias
         │       │   │   ├── store/products/route.ts                # GET /store/products (AVAILABLE catalog)
-        │       │   │   ├── store/purchase/route.ts                # POST /store/purchase (dummy checkout)
+        │       │   │   ├── store/payment-intent/route.ts          # POST server-priced Stripe Intent
+        │       │   │   ├── store/purchase/route.ts                # POST verified Stripe finalization
         │       │   │   ├── store/seller/listings/[id]/route.ts    # GET/PATCH own seller Listing
         │       │   │   └── store/products/[id]/lineage/route.ts   # GET /store/products/:id/lineage
         │       │   │   ├── admin/custom/route.ts # Placeholder only
@@ -217,6 +218,7 @@ Status values: **Implemented** = available in the repository and local database;
 
 - [x] **Implemented** — Public seller profiles return active seller information and available inventory.
 - [x] **Implemented** — Custom `GET /store/products` returns only published products with `AVAILABLE` Listings, scopes results to the publishable key's sales channels, and applies native category, collection, and option filters.
+- [x] **Implemented** — Catalog and seller inventory resolve a Region before using Medusa Pricing. `reg_eu` (EUR, default) and `reg_in` (INR) are stable public aliases for generated Medusa Region IDs; a product is hidden if it has no strictly positive calculated price in the active region.
 - [x] **Implemented** — Native category, collection, and option values are present for storefront filtering/search indexing.
 - [x] **Implemented** — Seller profiles return public details, active `AVAILABLE` products, and a `SOLD` closet archive.
 
@@ -226,8 +228,9 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Purchased listings transition to `SOLD` and remain retained for audit/history.
 - [x] **Implemented** — Product lineage records seller, buyer, price, and transaction time.
 - [x] **Implemented** — Resale can change the current Listing seller while lineage preserves prior ownership.
-- [x] **Implemented (MVP)** — `POST /store/purchase` uses per-Listing locks, revalidates availability and stock, calculates prices on the server, creates an order with a dummy capture, then marks each Listing sold, locks inventory at zero, creates per-line HQ rows, and records lineage.
-- [ ] **Partial** — Payment-provider authorization and a database-backed reservation/outbox transaction remain required for production checkout durability.
+- [x] **Implemented (MVP)** — `POST /store/payment-intent` calculates a strictly positive Medusa Region price and creates a Stripe PaymentIntent. `POST /store/purchase` uses per-Listing locks, revalidates availability/stock, retrieves Stripe directly, requires matching `succeeded` state, then creates the order, marks Listings sold, locks inventory at zero, and creates per-line HQ/lineage records.
+- [x] **Implemented (development only)** — When no Stripe secret exists outside production, the same endpoints use a deterministic `demo_pi_...` identity, retain the same server pricing and ownership checks, and label the Buyer CTA as `Complete Demo Purchase`.
+- [ ] **Partial** — Durable reservation/outbox handling and Stripe webhook recovery remain required for production checkout durability.
 - [x] **Implemented** — `GET /store/products/:id/lineage` returns public product provenance.
 - [ ] **Planned** — Dedicated admin lineage REST endpoints.
 
@@ -248,6 +251,7 @@ Status values: **Implemented** = available in the repository and local database;
 - [x] **Implemented** — Seller, Listing, Lineage, and HQ Fulfillment custom modules are registered in `medusa-config.js`.
 - [x] **Implemented** — Seller, listing, admin review, seller profile, and HQ route handlers exist.
 - [x] **Implemented** — Idempotent SQL schema and prompt-alignment migration are available for local setup.
+- [x] **Tested** — `stripe-payment.unit.spec.ts` verifies stable cart fingerprints and rejects non-succeeded, wrong-region, and wrong-amount Intents; `order-placed-hq-fulfillment.unit.spec.ts` verifies per-line lifecycle idempotency.
 - [x] **Implemented** — Sample sellers, products, listings, inventory, options, categories, collections, and lineage are populated locally.
 - [ ] **Partial** — Automated integration coverage for seller isolation, mixed carts, review audit, resale, delivery, and payout release remains to be added.
 - [ ] **Pending verification** — Run the live MVP smoke path after starting the backend on `localhost:9000`: authenticated seller creates a celebrity drop, public catalog filters it by native category/collection/options, admin approves it, and an authenticated buyer completes `POST /store/purchase`. Unit coverage passed on 2026-10-30, but this end-to-end HTTP check could not run because the local server was stopped.
@@ -605,7 +609,13 @@ If an email is intentionally changed, update `customer.email` and the matching
 emailpass `provider_identity.entity_id` in one transaction, then test both
 `POST /auth/customer/emailpass` and authenticated `GET /store/seller/me`.
 
-> The 13 seeded PawnPawn listings have USD and INR prices only (the 4 Medusa demo products include EUR). Querying a seeded listing with the Europe region returns no `calculated_price` until EUR prices are added.
+### 8.9 Regional catalog and pricing (EU / India)
+
+- The regional resolver supports conceptual aliases `reg_eu` (EUR, default) and `reg_in` (INR) for custom purchase calls. Browser catalog calls store and send the generated native Medusa Region ID because core Store pricing validates it before the custom route executes.
+- `GET /store/products` and `GET /store/sellers/:handle` accept native `region_id`. Both calculate native Price Set prices with `{ region_id, currency_code, quantity: 1 }` and expose only positive-priced `AVAILABLE` variants; currency is derived from the Region to preserve the Medusa query contract.
+- `POST /store/purchase` resolves the same region and rejects any missing, invalid, or zero calculated price before order creation. Browser amounts are never trusted.
+- `sql/sample-data.sql` now seeds EUR as the default price and INR as dual-listed demo pricing. Apply `sql/regional-pricing-backfill.sql` once to add EUR to pre-existing price sets safely; it does not alter Medusa core schemas.
+- Coverage: `src/utils/__tests__/regional-pricing.unit.spec.ts` validates alias resolution and excludes zero price results.
 
 Start / stop:
 
@@ -682,7 +692,7 @@ psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketpla
 
 ## 8. 🔄 Core Workflows
 
-> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD, filtered listing review, strict HQ fulfillment transitions and exceptions, per-product Admin lineage inspection, seller onboarding/listings/profile management, public lineage, dummy `POST /store/purchase`, and the **Sellers** admin page are implemented. Custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes remain planned. See `API.md` → Current Implementation Status.
+> **Status note:** Medusa core routes and the custom module services exist. Admin seller CRUD, filtered listing review, strict HQ fulfillment transitions and exceptions, per-product Admin lineage inspection, seller onboarding/listings/profile management, public lineage, server-priced `POST /store/payment-intent` plus verified `POST /store/purchase`, and the **Sellers** admin page are implemented. Custom `POST/PATCH /store/products`, auctions, and Admin lineage collection/mutation routes remain planned. See `API.md` → Current Implementation Status.
 
 ### 8.1 Admin Login (Implemented)
 ```
@@ -723,12 +733,14 @@ IMPLEMENTED: GET /admin/listings?status=&seller_id=, POST /admin/listings/:id/re
 PLANNED:     POST/PATCH /store/products, auction start/bid
 ```
 
-### 8.5 Purchase Flow (Implemented MVP)
+### 8.5 Stripe PaymentIntent checkout (Implemented MVP)
 ```
+IMPLEMENTED: POST /store/payment-intent (authenticated customer)
+  → src/workflows/purchase/dummy-checkout.ts calculates the native Region price and creates Stripe PaymentIntent
+  → returns client_secret, payment_intent_id, server amount, and currency; browser sends no price
 IMPLEMENTED: POST /store/purchase (authenticated customer)
-  → src/workflows/purchase/dummy-checkout.ts owns validation, native pricing, and locking
-  → accepts only quantity 1, locks Listing IDs, rechecks AVAILABLE + stock, then creates the order
-  → returns a successful dummy payment result after shared lifecycle processing
+  → locks Listing IDs, rechecks AVAILABLE + stock, retrieves Stripe Intent, and requires matching succeeded state
+  → creates a Medusa order only after verification, then runs shared lifecycle processing
 
 CURRENT: order.placed subscriber (src/subscribers/order-placed-hq-fulfillment.ts)
   → marks each Listing SOLD, drafts its product, locks inventory at zero, creates hq_fulfillment per line item
@@ -743,18 +755,18 @@ The marketplace uses Medusa services and workflows as follows:
 | Concern | Medusa integration | Custom responsibility |
 |---|---|---|
 | Product creation | `createProductsWorkflow`, Product module | Create the Listing link and marketplace metadata |
-| Order creation | `createOrderWorkflow` | Enforce quantity-one Listing rules and run dummy payment response |
+| Order creation | `createOrderWorkflow` | Enforce quantity-one Listing rules after verified Stripe Intent |
 | Pricing | Pricing module through the Product → Price Set link and `calculatePrices` | Use the selected region currency; never trust client prices |
 | Inventory | Query graph plus Inventory module | Verify stock before checkout and set linked levels to zero after sale |
 | Concurrency | Locking module `execute` with Listing keys | Prevent two buyers acquiring the same unique item |
 | Fulfillment | `order.placed` subscriber | Create one HQ row and one lineage row per order line |
 
 The checkout implementation is `src/workflows/purchase/dummy-checkout.ts`; the
-HTTP route only authenticates and serializes the response. The
+HTTP routes only authenticate and serialize the response. The
 `order-placed-hq-fulfillment.ts` subscriber is reusable for native Medusa orders
-and the dummy checkout. MVP limitations are dummy payment capture and no
-database-backed reservation/outbox transaction; production payment authorization
-and transactional inventory reservation must be added before launch.
+and verified Stripe checkout. MVP limitations are no durable database-backed
+reservation/outbox transaction and no Stripe webhook recovery path; both must
+be added before launch.
 
 ### 8.6 Lineage Query (Implemented REST)
 ```
@@ -956,7 +968,8 @@ Emma Watson original-seller demo login is `emma.watson@pawnpawn.demo` /
 ### 10.5 Purchase/Lineage
 | Method | Endpoint | Auth | Description | Status |
 |--------|----------|------|-------------|--------|
-| POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout; per-line SOLD, HQ fulfillment, and lineage processing | Implemented (MVP) |
+| POST | `/store/payment-intent` | Bearer/Cookie (customer) | Server-priced Stripe Intent creation | Implemented (MVP) |
+| POST | `/store/purchase` | Bearer/Cookie (customer) | Verified Stripe finalization; per-line SOLD, HQ fulfillment, and lineage processing | Implemented (MVP) |
 | GET | `/store/products/:id/lineage` | No | Public ownership history (opaque buyer IDs) | Implemented |
 
 ### 10.6 Custom Module Admin REST
@@ -1051,7 +1064,7 @@ changes still require `git diff --check`.
 
 | Phase | Priority | Epic / Focus Area | Key deliverables |
 |---|---|---|---|
-| Phase 1 (Immediate) | P0 | Production Checkout & Idempotency | Replace dummy checkout with a database-backed transaction outbox, strict inventory reservation, and payment-capture safety. |
+| Phase 1 (Immediate) | P0 | Production Checkout & Idempotency | Add database-backed outbox, strict inventory reservation, and Stripe webhook recovery to the implemented PaymentIntent flow. |
 | Phase 2 (Near-Term) | P1 | Frontend Integration & Onboarding | Connect `pawnpawn-frontend-buyer-ts` and `pawnpawn-frontend-seller-ts` to live APIs; enable real celebrity Customer-to-Seller account linking. |
 | Phase 3 (Expansion) | P2 | HQ Operations UI & Exceptions | Build the Admin HQ exception dashboard for split dispatch, seller cancellations, automated refunds, and authenticity certificate storage. |
 | Phase 4 (Scale) | P3 | Payouts & Advanced Features | Integrate Razorpay Route for automated post-delivery payout releases and introduce auction bidding logic. |
@@ -1105,4 +1118,4 @@ The UX goal is zero cognitive friction for admins, high trust for buyers, and lo
 
 ---
 
-*Last sync: Oct 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules, dummy checkout, public lineage, unified Product governance, and Admin seller CRUD are implemented. Canonical fixture counts are maintained in `SAMPLE_DATA.md`; local runtime data changes through review, checkout, and archive actions.*
+*Last sync: Nov 2026 — Medusa v2.22.0, seller/lineage/listing/HQ modules, Stripe PaymentIntent checkout, public lineage, unified Product governance, and Admin seller CRUD are implemented. Canonical fixture counts are maintained in `SAMPLE_DATA.md`; local runtime data changes through review, checkout, and archive actions.*

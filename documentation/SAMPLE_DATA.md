@@ -17,6 +17,8 @@ Seeded demo data for local development: Hollywood-celebrity sellers, buyer accou
 cd apps/backend
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/sample-data.sql
 psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/marketplace_prompt_alignment.sql
+# Required only for databases seeded before EUR default pricing:
+psql -h localhost -U postgres -d pawnpawn_db -v ON_ERROR_STOP=1 -f sql/regional-pricing-backfill.sql
 ```
 
 The script is idempotent — safe to run multiple times. It creates Medusa's required variant-to-inventory links and raw numeric inventory values, and preserves runtime Listing status, seller reassignment, and sold inventory instead of reopening a completed sale.
@@ -124,33 +126,33 @@ Do not `INSERT INTO customer` directly — that skips the `emailpass` identity a
 
 ### Celebrity listings
 
-| Product | Seller | Event / provenance | USD | INR |
+| Product | Seller | Event / provenance | EUR | INR |
 |---------|--------|--------------------|-----|-----|
-| Snoop Dogg Platinum Chain | snoopdogg | "Gin and Juice" video (1994) | 85,000 | 7,055,000 |
-| Snoop Dogg Studio Microphone | snoopdogg | Doggystyle sessions (1993) | 25,000 | 2,075,000 |
-| Kim Kardashian Met Gala Dress | kimkardashian | Met Gala (2019) | 120,000 | 9,960,000 |
-| Kim Kardashian Sunglasses | kimkardashian | Paris Fashion Week (2019) | 3,500 | 290,500 |
-| Dwayne Johnson WWE Championship Belt | dwaynejohnson | WWE title reign (2000) | 95,000 | 7,885,000 |
-| Dwayne Johnson Movie Boots | dwaynejohnson | *Hobbs & Shaw* (2019) | 12,000 | 996,000 |
-| Rihanna Fenty Stage Outfit | rihanna | Diamonds World Tour (2013) | 65,000 | 5,395,000 |
-| Rihanna Fenty Beauty Lipstick Set | rihanna | Fenty launch (2017) | 250 | 20,750 |
-| Leonardo DiCaprio Titanic Jacket | leonardodicaprio | *Titanic* (1997) | 42,000 | 3,486,000 |
-| Leonardo DiCaprio Oscar Speech Notes | leonardodicaprio | 88th Academy Awards (2016) | 18,000 | 1,494,000 |
-| Beyonce Formation Tour Boots | beyonce | Formation World Tour (2016) | 55,000 | 4,565,000 |
-| Beyonce Lemonade Dress | beyonce | *Lemonade* visual album (2016) | 38,000 | 3,154,000 |
-| Emma Watson Fall Drop Velvet Jacket | emmawatson | Emma Watson Fall Drop (2026) | 65,000 | 5,395,000 |
-| Kate Winslet Premiere Heels | katewinslet | Film premiere (2026) | 48,000 | 3,984,000 |
+| Snoop Dogg Platinum Chain | snoopdogg | "Gin and Juice" video (1994) | 85,000 | 7,650,000 |
+| Snoop Dogg Studio Microphone | snoopdogg | Doggystyle sessions (1993) | 25,000 | 2,250,000 |
+| Kim Kardashian Met Gala Dress | kimkardashian | Met Gala (2019) | 120,000 | 10,800,000 |
+| Kim Kardashian Sunglasses | kimkardashian | Paris Fashion Week (2019) | 3,500 | 315,000 |
+| Dwayne Johnson WWE Championship Belt | dwaynejohnson | WWE title reign (2000) | 95,000 | 8,550,000 |
+| Dwayne Johnson Movie Boots | dwaynejohnson | *Hobbs & Shaw* (2019) | 12,000 | 1,080,000 |
+| Rihanna Fenty Stage Outfit | rihanna | Diamonds World Tour (2013) | 65,000 | 5,850,000 |
+| Rihanna Fenty Beauty Lipstick Set | rihanna | Fenty launch (2017) | 250 | 22,500 |
+| Leonardo DiCaprio Titanic Jacket | leonardodicaprio | *Titanic* (1997) | 42,000 | 3,780,000 |
+| Leonardo DiCaprio Oscar Speech Notes | leonardodicaprio | 88th Academy Awards (2016) | 18,000 | 1,620,000 |
+| Beyonce Formation Tour Boots | beyonce | Formation World Tour (2016) | 55,000 | 4,950,000 |
+| Beyonce Lemonade Dress | beyonce | *Lemonade* visual album (2016) | 38,000 | 3,420,000 |
+| Emma Watson Fall Drop Velvet Jacket | emmawatson | Emma Watson Fall Drop (2026) | 65,000 | 5,850,000 |
+| Kate Winslet Premiere Heels | katewinslet | Film premiere (2026) | 48,000 | 4,320,000 |
 
 ### Buyer-turned-seller resale
 
-| Product | Seller | Provenance | USD |
+| Product | Seller | Provenance | EUR |
 |---------|--------|------------|-----|
 | Snoop Dogg Signed Doggystyle Vinyl | sarah_resells (untrusted) | Purchased from snoopdogg | 1,500 |
 
 Each product has:
 
 - One variant with `manage_inventory = true`, `allow_backorder = false`, and one stocked unit
-- USD and INR prices
+- EUR default prices and INR dual-listed prices
 - Link to the Default Sales Channel
 - `metadata` with `seller_id`, `seller_handle`, `seller_name`, `event`, `condition`, `provenance`, `certificate_of_authenticity`
 - Placeholder images from `picsum.photos`

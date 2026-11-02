@@ -1,4 +1,6 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { resolveRegionalContext } from "../../utils/regional-context"
+import { calculateRegionalVariantPrices } from "../../utils/regional-pricing"
 
 export type CatalogQuery = {
   category_id?: string | string[]
@@ -6,6 +8,8 @@ export type CatalogQuery = {
   options?: string | string[]
   limit?: string
   offset?: string
+  region_id?: string
+  currency_code?: string
 }
 
 export type CatalogContext = {
@@ -54,6 +58,10 @@ export const listAvailableCatalog = async (
   query: CatalogQuery,
   context: CatalogContext = {}
 ) => {
+  const region = await resolveRegionalContext(container, {
+    region_id: values(query.region_id)[0],
+    currency_code: values(query.currency_code)[0],
+  })
   const listing = container.resolve("listing") as any
   const product = container.resolve(Modules.PRODUCT) as any
   const seller = container.resolve("seller") as any
@@ -87,7 +95,18 @@ export const listAvailableCatalog = async (
   const sellerIds = [...new Set(filtered.map((entry: any) => listingByProduct.get(entry.id)?.seller_id).filter(Boolean))]
   const sellers: any[] = sellerIds.length ? await seller.listSellers({ id: sellerIds }, { take: sellerIds.length }) : []
   const sellerById = new Map(sellers.map((entry: any) => [entry.id, entry]))
-  const enriched = filtered.map((entry: any) => {
+  const pricesByVariant = await calculateRegionalVariantPrices(
+    container,
+    filtered.flatMap((entry: any) => (entry.variants ?? []).map((variant: any) => variant.id)),
+    region
+  )
+  const pricedProducts = filtered.map((entry: any) => ({
+    ...entry,
+    variants: (entry.variants ?? [])
+      .filter((variant: any) => pricesByVariant.has(variant.id))
+      .map((variant: any) => ({ ...variant, calculated_price: pricesByVariant.get(variant.id) })),
+  })).filter((entry: any) => entry.variants.length > 0)
+  const enriched = pricedProducts.map((entry: any) => {
     const currentListing = listingByProduct.get(entry.id)
     const profile = sellerById.get(currentListing?.seller_id)
     return {
@@ -98,10 +117,14 @@ export const listAvailableCatalog = async (
   })
   const offset = Math.max(0, Number(query.offset ?? 0) || 0)
   const limit = Math.min(100, Math.max(1, Number(query.limit ?? 20) || 20))
-  return { products: enriched.slice(offset, offset + limit), count: enriched.length, offset, limit }
+  return { products: enriched.slice(offset, offset + limit), count: enriched.length, offset, limit, region }
 }
 
-export const getSellerCatalog = async (container: any, handle: string) => {
+export const getSellerCatalog = async (container: any, handle: string, query: Pick<CatalogQuery, "region_id" | "currency_code"> = {}) => {
+  const region = await resolveRegionalContext(container, {
+    region_id: values(query.region_id)[0],
+    currency_code: values(query.currency_code)[0],
+  })
   const sellerService = container.resolve("seller") as any
   const listingService = container.resolve("listing") as any
   const productService = container.resolve(Modules.PRODUCT) as any
@@ -112,12 +135,24 @@ export const getSellerCatalog = async (container: any, handle: string) => {
   const products: any[] = productIds.length
     ? await productService.listProducts({ id: productIds }, { relations: ["categories", "options", "options.values", "variants"], take: productIds.length })
     : []
-  const productById = new Map(products.map((entry: any) => [entry.id, entry]))
+  const pricesByVariant = await calculateRegionalVariantPrices(
+    container,
+    products.flatMap((entry: any) => (entry.variants ?? []).map((variant: any) => variant.id)),
+    region
+  )
+  const productById = new Map(products.map((entry: any) => [entry.id, {
+    ...entry,
+    variants: (entry.variants ?? [])
+      .filter((variant: any) => pricesByVariant.has(variant.id))
+      .map((variant: any) => ({ ...variant, calculated_price: pricesByVariant.get(variant.id) })),
+  }]))
   const active: any[] = []
   const archive: any[] = []
   for (const listing of listings) {
     const entry = productById.get(listing.product_id)
-    if (!entry) continue
+    // AVAILABLE pieces need a valid active-region price. Sold closet entries
+    // remain visible for provenance even if a current price is unavailable.
+    if (!entry || (listing.listing_status === "AVAILABLE" && !entry.variants.length)) continue
     const result = { ...entry, marketplace_listing: toPublicListing(listing) }
     if (listing.listing_status === "AVAILABLE") active.push(result)
     else archive.push(result)
@@ -126,5 +161,6 @@ export const getSellerCatalog = async (container: any, handle: string) => {
     seller: { id: profile.id, handle: profile.handle, store_name: profile.store_name, avatar_url: profile.avatar_url, bio: profile.bio },
     products: active,
     archive,
+    region,
   }
 }

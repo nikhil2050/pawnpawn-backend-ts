@@ -86,7 +86,7 @@ This section is authoritative. Anything marked **Planned** is a documented contr
 | Seller listings | `GET/POST /store/seller/listings`, `POST /store/seller/products`, `PATCH /store/seller/listings/:id` | Implemented |
 | Seller listings (core) | `POST/PATCH /store/products`, `GET /store/products?listing_type=` | **Planned** (use `/store/seller/products`) |
 | Auctions | `POST /store/products/:id/auction/start`, `POST /store/products/:id/bid` | **Planned** |
-| Purchase + lineage REST | `POST /store/purchase`, `GET /store/products/:id/lineage` | Implemented |
+| Purchase + lineage REST | `POST /store/payment-intent`, `POST /store/purchase`, `GET /store/products/:id/lineage` | Implemented |
 | Admin seller CRUD | `GET/POST /admin/seller`, `GET/PATCH/DELETE /admin/seller/:id` | Implemented |
 | Admin listings | `GET /admin/listings`, `POST /admin/listings/:id/review` | Implemented |
 | Admin product marketplace mapping | `GET /admin/products`, `GET /admin/products/:id`, `GET/PATCH /admin/products/:id/marketplace-listing` | Implemented |
@@ -120,7 +120,8 @@ apps/backend/src/api/store/seller/listings/[id]/route.ts    # PATCH /store/selle
 apps/backend/src/api/store/sellers/[handle]/route.ts        # GET /store/sellers/:handle
 apps/backend/src/api/store/products/route.ts                # GET /store/products (AVAILABLE catalog + filters)
 apps/backend/src/api/store/products/[id]/lineage/route.ts   # GET /store/products/:id/lineage
-apps/backend/src/api/store/purchase/route.ts                # POST /store/purchase (dummy checkout)
+apps/backend/src/api/store/payment-intent/route.ts          # POST /store/payment-intent (server-priced Stripe Intent)
+apps/backend/src/api/store/purchase/route.ts                # POST /store/purchase (verified Stripe finalization)
 apps/backend/src/api/middlewares.ts
 ```
 
@@ -1049,6 +1050,17 @@ paths:
         '200':
           description: Bid placed
 
+  /store/payment-intent:
+    post:
+      tags: [Purchase]
+      summary: Create a server-priced Stripe PaymentIntent
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '201':
+          description: PaymentIntent client secret and server-calculated total
+
   /store/purchase:
     post:
       tags: [Purchase]
@@ -1070,7 +1082,7 @@ paths:
                     type: object
                   payment:
                     type: object
-                    example: { status: CAPTURED, provider: dummy }
+                    example: { status: CAPTURED, provider: stripe }
                   fulfillment:
                     type: object
                     example: { status: WAITING_FOR_ARRIVAL, per_line_item: true }
@@ -1406,7 +1418,8 @@ paths:
 
 | Method | Endpoint | Auth | Description | Success Status | Status |
 |--------|----------|------|-------------|----------------|--------|
-| POST | `/store/purchase` | Bearer/Cookie (customer) | Dummy checkout for unique variants; creates per-line HQ and lineage records | `201 Created` | Implemented |
+| POST | `/store/payment-intent` | Bearer/Cookie (customer) | Create a server-priced Stripe PaymentIntent | `201 Created` | Implemented |
+| POST | `/store/purchase` | Bearer/Cookie (customer) | Finalize a verified Stripe Intent; creates per-line HQ and lineage records | `201 Created` | Implemented |
 | GET | `/store/products/:id/lineage` | No | Public ownership history (opaque buyer IDs) | `200 OK` | Implemented |
 
 ### Custom Module Admin APIs
@@ -1611,9 +1624,58 @@ condition, then returns the Listing to `PENDING_APPROVAL`. Price, category,
 collection, options, and images remain unchanged until the Seller update
 contract is expanded transactionally.
 
-### 6.4 Purchase Product
+### 6.4 Regional catalog pricing (EU / India)
 
-> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated customer and accepts one or more unique variants. The server calculates each price from the Medusa price set in the requested region; clients cannot set a line price. It locks all requested Listings, revalidates `AVAILABLE` status and stock, creates a Medusa order through `createOrderWorkflow`, performs a successful dummy capture, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. A real payment provider and durable reservation/outbox transaction remain follow-up work; public lineage is available at `GET /store/products/:id/lineage`.
+`GET /store/products` and `GET /store/sellers/:handle` accept:
+
+| Query | Meaning |
+|---|---|
+| `region_id` | Native Medusa Region ID; the local EU default is `reg_01M5J0TH63KAP4HJN34ERGDC5N`, India is `reg_01M5SGFGPPFNFBFRJQAAHRRNVA` |
+
+The response adds `region: { id, currency_code, locale }`. Each public
+`AVAILABLE` Product must have a Variant with a strictly positive Medusa
+calculated price in that Region. Products without one are excluded; this avoids
+unpriced instant-buy checkout paths. EUR is the default seeded catalog price.
+Medusa's core Store query validator derives currency from `region_id`; do not
+send an extra `currency_code` query parameter.
+
+### 6.5 Create Stripe PaymentIntent
+
+> **Status: IMPLEMENTED (MVP)** — `/store/payment-intent` requires an authenticated Customer. It calculates the exact positive Medusa Price Set total for the requested Region and creates a Stripe PaymentIntent with server-owned Customer, Region, and cart-fingerprint metadata. No browser price is accepted.
+
+For a local investor demo without Stripe keys, non-production environments return
+`provider: "demo"` and a deterministic `demo_pi_...` identifier instead. It
+uses the identical server price, Customer, Region, and cart checks, never
+contacts Stripe, and must not be enabled in production.
+
+```http
+POST /store/payment-intent
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "items": [{ "variant_id": "variant_01JABCDEF123", "quantity": 1 }],
+  "region_id": "reg_01M5J0TH63KAP4HJN34ERGDC5N",
+  "currency_code": "eur",
+  "idempotency_key": "pawnpawn-browser-attempt-id"
+}
+```
+
+**Response (201):**
+```json
+{
+  "payment": {
+    "payment_intent_id": "pi_...",
+    "client_secret": "pi_..._secret_...",
+    "amount": 120000,
+    "currency_code": "eur"
+  }
+}
+```
+
+### 6.6 Finalize Verified Purchase
+
+> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated Customer and a Stripe `payment_intent_id`. The server retrieves the Intent directly from Stripe and requires matching `succeeded` state, server price/currency, Customer, Region, and cart fingerprint before it creates a Medusa order. It locks requested Listings, revalidates `AVAILABLE` status and stock, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. Durable reservation/outbox and Stripe webhook recovery remain follow-up work.
 
 **Request:**
 ```http
@@ -1625,7 +1687,8 @@ Content-Type: application/json
   "items": [
     { "variant_id": "variant_01JABCDEF123", "quantity": 1 }
   ],
-  "region_id": "reg_01M5SSC7P6CPJDG955B1564RQT",
+  "region_id": "reg_01M5J0TH63KAP4HJN34ERGDC5N",
+  "payment_intent_id": "pi_...",
   "sales_channel_id": "sc_01M5J0TH4TCBFJ4NJD3T1TEZZ2",
   "shipping_address": {
     "first_name": "Sarah",
@@ -1646,23 +1709,28 @@ Content-Type: application/json
     "status": "pending",
     "customer_id": "cust_01JXYZ789"
   },
-  "payment": { "status": "CAPTURED", "provider": "dummy" },
+  "payment": { "status": "CAPTURED", "provider": "stripe", "payment_intent_id": "pi_..." },
   "fulfillment": { "status": "WAITING_FOR_ARRIVAL", "per_line_item": true }
 }
 ```
 
-### 6.5 Browse Seeded Products (Working Today)
+`region_id` is required by the buyer experience. Catalog calls must use native
+Medusa IDs because core pricing validates the request before custom route code;
+the purchase workflow additionally accepts `reg_eu` and `reg_in` aliases. A
+missing, mismatched-currency, or zero regional price returns `400`; it never
+creates a zero-value order.
+
+### 6.7 Browse Seeded Products (Working Today)
 
 > **Status: IMPLEMENTED** — Medusa core route. Requires the publishable key from the `api_key` table.
 
 ```bash
 PK=$(psql -h localhost -U postgres -d pawnpawn_db -tAc \
   "SELECT token FROM api_key WHERE type='publishable' LIMIT 1;")
-US=$(psql -h localhost -U postgres -d pawnpawn_db -tAc \
-  "SELECT id FROM region WHERE name='United States';")
+EU=reg_eu
 
 curl -s -H "x-publishable-api-key: $PK" \
-  "http://localhost:9000/store/products?limit=100&region_id=$US&fields=id,title,metadata,*variants,*variants.calculated_price"
+  "http://localhost:9000/store/products?limit=100&region_id=$EU&fields=id,title,metadata,*variants,*variants.calculated_price"
 ```
 
 Returns the 15 initially available marketplace listings. Runtime sales, review, and archive actions change this count. `metadata` contains compatibility display fields (`seller_id`, `seller_handle`, `seller_name`, `event`, `condition`, and `provenance`); Listing remains the ownership source of truth.
@@ -1675,7 +1743,7 @@ curl -s -X POST http://localhost:9000/auth/customer/emailpass \
   -d '{"email":"sarah.johnson@gmail.com","password":"buyer1234"}'
 ```
 
-### 6.6 List Sellers in the Admin API (Working Today)
+### 6.8 List Sellers in the Admin API (Working Today)
 
 > **Status: IMPLEMENTED** — `GET /admin/seller`, `GET /admin/seller/:id`, `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` read and mutate the custom seller module. The Medusa Admin UI page is at `http://localhost:9000/app/sellers`.
 
@@ -1740,7 +1808,7 @@ The endpoint requires admin authentication (401 without a token). Use `q=snoop`,
 
 The Admin UI page uses the same API and shows store, handle, category, trust, verification, bio, social handle, and whether a customer account is linked.
 
-### 6.7 Create, Update, and Deactivate Sellers (Working Today)
+### 6.9 Create, Update, and Deactivate Sellers (Working Today)
 
 > **Status: IMPLEMENTED** — `POST /admin/seller`, `PATCH /admin/seller/:id`, and `DELETE /admin/seller/:id` (soft-delete via `is_deactivated`).
 
@@ -1818,7 +1886,7 @@ Authorization: Bearer <admin_token>
 }
 ```
 
-### 6.8 Review a Listing (Working Today)
+### 6.10 Review a Listing (Working Today)
 
 > **Status: IMPLEMENTED** — `POST /admin/listings/:id/review` re-reviews any non-sold Listing. `APPROVE` and `EDIT_AND_APPROVE` publish the product and set the Listing to `AVAILABLE`; `REJECT` sets it to `REJECTED` and drafts the product. Legacy `RETURN` resets it to `PENDING_APPROVAL` and drafts the product. Each action records the reviewer, timestamp, and supplied feedback. The unified Product detail governance panel provides the review controls; `/app/listings` redirects to Products.
 
@@ -1885,7 +1953,7 @@ Content-Type: application/json
 }
 ```
 
-### 6.9 Advance an HQ Fulfillment (Working Today)
+### 6.11 Advance an HQ Fulfillment (Working Today)
 
 > **Status: IMPLEMENTED** — `POST /admin/hq-fulfillments/:id` enforces the full line-item lifecycle. Passing `certificate_url` stores the authenticity certificate; reaching `DELIVERED` releases payout.
 
@@ -1914,7 +1982,7 @@ Valid sequence: `MARK_RECEIVED` (`WAITING_FOR_ARRIVAL` → `ARRIVED_AT_HQ`), `AU
 }
 ```
 
-### 6.10 HQ Line-Item Exceptions
+### 6.12 HQ Line-Item Exceptions
 
 > **Status: IMPLEMENTED (MVP)** — `POST /admin/hq-fulfillments/:id/exception` operates on one order line only, so ready items in a mixed cart can be dispatched while another seller's item remains delayed.
 
@@ -1956,7 +2024,7 @@ line's lineage transfer. Repeated cancellation is idempotent.
 }
 ```
 
-### 6.11 Public Seller Profile (Working Today)
+### 6.13 Public Seller Profile (Working Today)
 
 > **Status: IMPLEMENTED** — `GET /store/sellers/:handle` returns public seller details, active `AVAILABLE` products, and a `SOLD` closet archive.
 
@@ -1979,7 +2047,7 @@ curl -s "http://localhost:9000/store/sellers/snoopdogg"
 }
 ```
 
-### 6.12 Seller Workspace Profile (Working Today)
+### 6.14 Seller Workspace Profile (Working Today)
 
 `GET /store/seller/me` returns the authenticated customer's active Seller profile,
 including `seller_trust`, `seller_category`, `verification_status`, flag state, and
@@ -1988,14 +2056,14 @@ Listing counts (`total_listings`, `pending_approval`, `available`, `sold`, and
 `avatar_url`, and `social_media_handle`; marketplace moderation and payment fields
 remain admin-controlled.
 
-### 6.13 Public Product Lineage (Working Today)
+### 6.15 Public Product Lineage (Working Today)
 
 `GET /store/products/:id/lineage` returns transfers in ascending transaction order.
 Each transfer includes the public seller profile, opaque buyer customer ID, price,
 transaction timestamp, and `voided_at` when an HQ cancellation reversed it. Customer
 PII, payment data, and internal order-line identifiers are never exposed.
 
-### 6.14 Admin Product Lineage Inspection (Working Today)
+### 6.16 Admin Product Lineage Inspection (Working Today)
 
 `GET /admin/lineage/:product_id` is a read-only dispute and authentication view. It returns the native Product, its Listing review state, full Lineage records including buyer and order-line identifiers, and all HQ fulfillment records. Seller data is summarized without payment-account details.
 

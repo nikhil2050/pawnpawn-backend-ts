@@ -434,7 +434,7 @@ components:
           nullable: true
         hq_status:
           type: string
-          enum: [WAITING_FOR_ARRIVAL, ARRIVED_AT_HQ, AUTHENTICATED_AND_PACKED, DISPATCHED, DELIVERED]
+          enum: [WAITING_FOR_ARRIVAL, ARRIVED_AT_HQ, AUTHENTICATED_AND_PACKED, DISPATCHED, DELIVERED, CANCELLED_BY_SELLER]
           default: WAITING_FOR_ARRIVAL
         certificate_url:
           type: string
@@ -1420,6 +1420,7 @@ paths:
 |--------|----------|------|-------------|----------------|--------|
 | POST | `/store/payment-intent` | Bearer/Cookie (customer) | Create a server-priced Stripe PaymentIntent | `201 Created` | Implemented |
 | POST | `/store/purchase` | Bearer/Cookie (customer) | Finalize a verified Stripe Intent; creates per-line HQ and lineage records | `201 Created` | Implemented |
+| POST | `/webhooks/stripe` | Stripe signature | Recover confirmed Stripe checkout after browser disconnect | `200 OK` | Implemented |
 | GET | `/store/products/:id/lineage` | No | Public ownership history (opaque buyer IDs) | `200 OK` | Implemented |
 
 ### Custom Module Admin APIs
@@ -1446,7 +1447,7 @@ paths:
 
 `GET /admin/products` accepts the PawnPawn-only `listing_status` query parameter: `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, or `REJECTED`. It filters on custom Listing records before native Product pagination. `include_archived=true` uses Medusa's `withDeleted` query path and returns only soft-deleted Products for the Archived view.
 
-The Admin Products table orders marketplace columns as **Product**, **Seller**, **Collection**, **SKU**, **Inventory**, then **Listing Status**. SKU is read from native `product.variants`: one Variant shows its exact SKU; multiple Variants show the primary SKU plus `(+N more)`. The Product detail view includes a Variants widget with each Variant's SKU, first price, and inventory. The Dashboard patch is repeatable and replaces its injected block so restarting or reinstalling dependencies cannot create duplicate-column syntax errors. Status quick filters include Archived; archived Products render as `INACTIVE`. The Product detail governance widget supports Seller reassignment, inline `APPROVE`, `EDIT_AND_APPROVE`, `REJECT`, and `RETURN` (Pending approval), plus archive/restore. Archive and restore run in one compensating Medusa workflow for Product and Listing; `listing.product_id` is retained, inventory links are preserved, and a stale `product.deleted` event cannot re-archive a restored Listing. The widgets use the main product-details zone and can be moved to the top with Admin **Customize layout**. `/app/listings` redirects to this unified screen.
+The Admin Products table orders marketplace columns as **Product**, **Seller**, **Collection**, native Variant **Price**, **SKU**, **Inventory**, then **Listing Status**. Price is the first positive native Variant Price Set entry and SKU is read from `product.variants`: one Variant shows its exact SKU; multiple Variants show the primary SKU plus `(+N more)`. The Product detail view includes a Variants widget with each Variant's SKU, first price, and inventory. **All** intentionally excludes soft-deleted Products; its ⓘ hover text explains that **Archived** is the operational view for review or restore. The Dashboard patch repairs/replaces injected columns so restarting or reinstalling dependencies cannot create duplicate-column syntax errors. `INACTIVE` is a neutral display state derived from Medusa `product.deleted_at`, not a Listing lifecycle value; archived records retain their Listing and lineage. The Product detail governance widget supports Seller reassignment, inline `APPROVE`, `EDIT_AND_APPROVE`, `REJECT`, and `RETURN` (Pending approval), plus archive/restore. Archive and restore run in one compensating Medusa workflow for Product and Listing; `listing.product_id` is retained, inventory links are preserved, and a stale `product.deleted` event cannot re-archive a restored Listing. The widgets use the main product-details zone and can be moved to the top with Admin **Customize layout**. `/app/listings` redirects to this unified screen.
 
 ### Custom Module Service Methods
 
@@ -1641,7 +1642,7 @@ send an extra `currency_code` query parameter.
 
 ### 6.5 Create Stripe PaymentIntent
 
-> **Status: IMPLEMENTED (MVP)** — `/store/payment-intent` requires an authenticated Customer. It calculates the exact positive Medusa Price Set total for the requested Region and creates a Stripe PaymentIntent with server-owned Customer, Region, and cart-fingerprint metadata. No browser price is accepted.
+> **Status: IMPLEMENTED (MVP)** — `/store/payment-intent` requires an authenticated Customer. It calculates the exact positive Medusa Price Set total for the requested Region and creates a Stripe PaymentIntent with server-owned Customer, Region, sorted Variant IDs, and cart-fingerprint metadata. No browser price is accepted.
 
 For a local investor demo without Stripe keys, non-production environments return
 `provider: "demo"` and a deterministic `demo_pi_...` identifier instead. It
@@ -1675,7 +1676,7 @@ Content-Type: application/json
 
 ### 6.6 Finalize Verified Purchase
 
-> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated Customer and a Stripe `payment_intent_id`. The server retrieves the Intent directly from Stripe and requires matching `succeeded` state, server price/currency, Customer, Region, and cart fingerprint before it creates a Medusa order. It locks requested Listings, revalidates `AVAILABLE` status and stock, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. Durable reservation/outbox and Stripe webhook recovery remain follow-up work.
+> **Status: IMPLEMENTED (MVP)** — `/store/purchase` requires an authenticated Customer and a Stripe `payment_intent_id`. The server retrieves the Intent directly from Stripe and requires matching `succeeded` state, server price/currency, Customer, Region, Variant IDs, and cart fingerprint before it creates a Medusa order. It locks requested Listings, revalidates `AVAILABLE` status and stock, and invokes the shared idempotent post-order handler. That handler marks each Listing `SOLD`, drafts its product, locks inventory at zero, creates one `hq_fulfillment` row per order line in `WAITING_FOR_ARRIVAL`, and records lineage keyed by the order-line ID. Signed webhook recovery is implemented; durable reservation/outbox remains follow-up work.
 
 **Request:**
 ```http
@@ -1719,6 +1720,15 @@ Medusa IDs because core pricing validates the request before custom route code;
 the purchase workflow additionally accepts `reg_eu` and `reg_in` aliases. A
 missing, mismatched-currency, or zero regional price returns `400`; it never
 creates a zero-value order.
+
+### 6.6.1 Stripe recovery webhook
+
+> **Status: IMPLEMENTED** — `POST /webhooks/stripe` is intentionally not a
+> browser API. Medusa preserves the raw body, verifies the Stripe signature
+> using `STRIPE_WEBHOOK_SECRET`, and processes only
+> `payment_intent.succeeded`. It reconstructs the checkout from Stripe-owned
+> metadata and calls the same idempotent lock/order/fulfillment path as
+> `/store/purchase`. Configure the endpoint secret in the backend only.
 
 ### 6.7 Browse Seeded Products (Working Today)
 

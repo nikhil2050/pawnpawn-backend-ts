@@ -179,7 +179,7 @@ Dashed/annotated edges are application-level references and are not enforced by 
 
 - Unique constraints/indexes: `seller.handle`, `seller.razorpay_account_id`, partial `idx_seller_customer_id`; partial `idx_product_lineage_order_line`; `listing.product_id`; and `hq_fulfillment.order_line_item_id`.
 - Lookup indexes: seller handle, Razorpay account, verification status, trust, and category; lineage product, seller, buyer, and transaction time; composite listing `(seller_id, listing_status)`; composite HQ `(seller_id, hq_status)`.
-- Check constraints restrict listing status to `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, `REJECTED`; listing type to `FIXED_PRICE`, `AUCTION`; and HQ status to the six lifecycle states in the model.
+- Check constraints restrict listing status to `PENDING_APPROVAL`, `AVAILABLE`, `SOLD`, `REJECTED`; listing type to `FIXED_PRICE`, `AUCTION`; and HQ status to the seven lifecycle states in the model (`WAITING_FOR_ARRIVAL`, `ARRIVED_AT_HQ`, `AUTHENTICATED_AND_PACKED`, `DISPATCHED`, `DELIVERED`, `CANCELLED_BY_SELLER`).
 - Seller verification status is a PostgreSQL enum (`PENDING`, `VERIFIED`). Seller trust/category and HQ refund status are enum-like values in Medusa models but represented as text/varchar in the custom SQL; only the SQL-declared checks are guaranteed at the database layer here.
 - Foreign key deletes from Seller, Listing, or Product are protected with `ON DELETE RESTRICT` on the custom FK declarations.
 

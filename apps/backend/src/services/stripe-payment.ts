@@ -6,6 +6,7 @@ export type StripePaymentInput = {
   currency_code: string
   customer_id: string
   region_id: string
+  variant_ids: string[]
   item_fingerprint: string
   idempotency_key?: string
 }
@@ -17,6 +18,12 @@ export class StripePaymentError extends Error {
 }
 
 export type VerifiedPayment = Pick<Stripe.PaymentIntent, "status" | "amount" | "currency" | "metadata">
+export type StripeWebhookCheckout = {
+  customer_id: string
+  region_id: string
+  variant_ids: string[]
+  payment_intent_id: string
+}
 
 // A real Stripe secret is mandatory outside development. The deterministic
 // development payment is only for local investor demos without a Stripe account.
@@ -46,6 +53,8 @@ const getStripe = () => {
   return new Stripe(secret)
 }
 
+const normalizedVariantIds = (variantIds: string[]) => [...variantIds].sort().join(",")
+
 export const createStripePaymentIntent = async (input: StripePaymentInput) => {
   if (!Number.isInteger(input.amount) || input.amount <= 0) {
     throw new StripePaymentError(400, "A positive server-calculated payment amount is required")
@@ -57,6 +66,7 @@ export const createStripePaymentIntent = async (input: StripePaymentInput) => {
     metadata: {
       pawnpawn_customer_id: input.customer_id,
       pawnpawn_region_id: input.region_id,
+      pawnpawn_variant_ids: normalizedVariantIds(input.variant_ids),
       pawnpawn_item_fingerprint: input.item_fingerprint,
     },
   }
@@ -80,6 +90,7 @@ export const createDemoPaymentIntent = (input: Omit<StripePaymentInput, "idempot
   metadata: {
     pawnpawn_customer_id: input.customer_id,
     pawnpawn_region_id: input.region_id,
+    pawnpawn_variant_ids: normalizedVariantIds(input.variant_ids),
     pawnpawn_item_fingerprint: input.item_fingerprint,
   },
 })
@@ -89,6 +100,33 @@ export const retrieveStripePaymentIntent = async (paymentIntentId: string) => {
     throw new StripePaymentError(400, "A valid Stripe payment_intent_id is required")
   }
   return getStripe().paymentIntents.retrieve(paymentIntentId)
+}
+
+/**
+ * Stripe webhooks preserve the raw request body in the Medusa middleware so
+ * Stripe can verify the signature before a disconnected browser is recovered.
+ * See documentation/AI_CONTEXT.md, "Stripe PaymentIntent checkout".
+ */
+export const constructStripeWebhookEvent = (rawBody: Buffer | string, signature: string) => {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim()
+  if (!webhookSecret) {
+    throw new StripePaymentError(503, "Stripe webhooks are not configured. Set STRIPE_WEBHOOK_SECRET on the backend.")
+  }
+  try {
+    return getStripe().webhooks.constructEvent(rawBody, signature, webhookSecret)
+  } catch {
+    throw new StripePaymentError(400, "Stripe webhook signature is invalid")
+  }
+}
+
+export const getStripeWebhookCheckout = (intent: Stripe.PaymentIntent): StripeWebhookCheckout => {
+  const customerId = intent.metadata.pawnpawn_customer_id
+  const regionId = intent.metadata.pawnpawn_region_id
+  const variantIds = intent.metadata.pawnpawn_variant_ids?.split(",").filter(Boolean) ?? []
+  if (!customerId || !regionId || variantIds.length === 0) {
+    throw new StripePaymentError(400, "Stripe PaymentIntent is missing PawnPawn checkout metadata")
+  }
+  return { customer_id: customerId, region_id: regionId, variant_ids: variantIds, payment_intent_id: intent.id }
 }
 
 /**
@@ -108,6 +146,7 @@ export const assertSucceededStripePayment = (
   if (
     intent.metadata.pawnpawn_customer_id !== expected.customer_id ||
     intent.metadata.pawnpawn_region_id !== expected.region_id ||
+    intent.metadata.pawnpawn_variant_ids !== normalizedVariantIds(expected.variant_ids) ||
     intent.metadata.pawnpawn_item_fingerprint !== expected.item_fingerprint
   ) {
     throw new StripePaymentError(403, "Stripe payment does not belong to this checkout")

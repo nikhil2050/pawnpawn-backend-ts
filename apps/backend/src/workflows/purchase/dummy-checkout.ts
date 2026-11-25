@@ -9,6 +9,7 @@ import {
   createDemoPaymentIntent,
   createPaymentFingerprint,
   createStripePaymentIntent,
+  getStripeWebhookCheckout,
   isDemoPaymentIntent,
   isDemoPaymentMode,
   retrieveStripePaymentIntent,
@@ -193,6 +194,7 @@ export const createCheckoutPaymentIntent = async (
     currency_code: quote.region.currency_code,
     customer_id: customerId,
     region_id: quote.region.id,
+    variant_ids: quote.items.map((item) => item.variantId),
     item_fingerprint: quote.itemFingerprint,
   }
   if (isDemoPaymentMode()) {
@@ -280,6 +282,7 @@ export const executeStripeCheckout = async (
       currency_code: quote.region.currency_code,
       customer_id: customerId,
       region_id: quote.region.id,
+      variant_ids: quote.items.map((item) => item.variantId),
       item_fingerprint: quote.itemFingerprint,
     }
     try {
@@ -324,3 +327,16 @@ export const executeStripeCheckout = async (
 // Kept temporarily for imports outside the HTTP route while callers migrate
 // to the explicit Stripe name. See documentation/AI_CONTEXT.md.
 export const executeDummyCheckout = executeStripeCheckout
+
+/** Replays a signed `payment_intent.succeeded` event through the normal lock and fulfillment path. */
+export const reconcileStripePaymentIntent = async (container: any, paymentIntent: any) => {
+  const checkout = getStripeWebhookCheckout(paymentIntent)
+  if (paymentIntent.status !== "succeeded") {
+    throw new PurchaseError(409, "Stripe webhook did not contain a succeeded PaymentIntent")
+  }
+  return executeStripeCheckout(container, checkout.customer_id, {
+    items: checkout.variant_ids.map((variant_id) => ({ variant_id, quantity: 1 })),
+    region_id: checkout.region_id,
+    payment_intent_id: checkout.payment_intent_id,
+  })
+}

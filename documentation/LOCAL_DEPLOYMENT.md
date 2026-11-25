@@ -420,6 +420,17 @@ Use the returned `client_secret` to confirm the Stripe test card, then call
 `payment_intent_id`. Verify the Listing is `SOLD`, its inventory level is zero,
 and one `hq_fulfillment` and `product_lineage` row exists for the order line.
 
+To enable disconnect recovery locally, run Stripe CLI in a separate terminal
+and copy its endpoint secret into `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env`:
+
+```bash
+stripe listen --forward-to http://localhost:9000/webhooks/stripe
+```
+
+The webhook accepts only Stripe-signed `payment_intent.succeeded` events and
+uses the same idempotent order-finalization workflow. It is not needed for the
+no-key demo payment path.
+
 #### No-key investor demo
 
 When the backend runs in development and `STRIPE_SECRET_KEY` is empty, the

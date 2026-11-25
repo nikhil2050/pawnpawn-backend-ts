@@ -3,6 +3,7 @@ import {
   createStep,
   createWorkflow,
   StepResponse,
+  transform,
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 
@@ -131,10 +132,11 @@ export const archiveProductMarketplaceWorkflow = createWorkflow(
     updateMarketplaceListingArchiveStateStep(pair)
     updateProductArchiveStateStep(pair)
 
+    const archived = transform({ action: input.action }, ({ action }) => action === "ARCHIVE")
     return new WorkflowResponse({
       product_id: pair.product_id,
       listing_id: pair.listing_id,
-      archived: input.action === "ARCHIVE",
+      archived,
     })
   }
 )

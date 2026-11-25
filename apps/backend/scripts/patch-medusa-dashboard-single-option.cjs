@@ -168,7 +168,17 @@ const patchProductListSellerColumn = (file, column) => {
   // Remove the earlier append-before-actions patch, if this dependency tree
   // was already patched by a previous version of this script.
   source = source.replace(legacySellerColumnPattern, "\n")
-  if (source.includes(sellerColumnMarker)) return
+  // A previous patch revision could leave the outer display call in place
+  // when it rewrote a column block. Repair that generated source before
+  // checking the marker, otherwise a restart keeps an invalid table module.
+  source = source.replace(
+    /(columnHelper(?:2)?\.display\(\{\s*)columnHelper(?:2)?\.display\(\{/g,
+    "$1"
+  )
+  if (source.includes(sellerColumnMarker)) {
+    fs.writeFileSync(file, source)
+    return
+  }
 
   // The native Product column is the first base column. Insert Seller after
   // it so Collection remains the third visible column.
@@ -278,6 +288,12 @@ patchProductListListingStatus(path.join(dashboardRoot, "dist/app.js"), listingSt
 // extended Admin API. The custom filter never changes Medusa core schemas.
 const patchProductListQuery = (file) => {
   let source = fs.readFileSync(file, "utf8")
+  // Request the native Variant and soft-delete fields used by the marketplace
+  // projections. The Admin API remaps Variant prices to Medusa Price Sets.
+  source = source.replace(
+    "id,title,handle,status,*collection,*sales_channels,variants.id,thumbnail",
+    "id,title,handle,status,deleted_at,*collection,*sales_channels,variants.id,variants.sku,variants.inventory_quantity,variants.prices,thumbnail"
+  )
   source = source.replace(
     "const searchParams: HttpTypes.AdminProductListParams = {",
     "const searchParams: HttpTypes.AdminProductListParams & { listing_status?: string; include_archived?: boolean } = {"
@@ -343,7 +359,7 @@ const marketplaceFilterApp = `      const selectedListingStatus = (new URLSearch
 `
 
 const marketplaceFilterTabsSource = `      <div className="border-t border-ui-border-base px-6 py-3">
-        <div className="flex flex-wrap gap-2" aria-label="Marketplace listing status filters">
+        <div className="flex flex-wrap items-center gap-2" aria-label="Marketplace listing status filters">
           {[
             ["", "All"],
             ["PENDING_APPROVAL", "Pending Approval"],
@@ -359,14 +375,19 @@ const marketplaceFilterTabsSource = `      <div className="border-t border-ui-bo
               {label}
             </Link>
           ))}
+          <span
+            className="cursor-help text-ui-fg-subtle"
+            title="Archived products are intentionally hidden from All and lifecycle searches. Use Archived to review or restore soft-deleted products; their listing and lineage are retained."
+            aria-label="Archived products information"
+          >ⓘ</span>
         </div>
       </div>
 `
 
-const marketplaceFilterTabsMjs = `    /* @__PURE__ */ jsx2("div", { className: "border-t border-ui-border-base px-6 py-3", children: /* @__PURE__ */ jsx2("div", { className: "flex flex-wrap gap-2", "aria-label": "Marketplace listing status filters", children: [["", "All"], ["PENDING_APPROVAL", "Pending Approval"], ["AVAILABLE", "Available"], ["SOLD", "Sold"], ["REJECTED", "Rejected"]].map(([status, label]) => /* @__PURE__ */ jsx2(Link, { to: listingStatusPath(status), className: \`rounded-md px-3 py-1.5 text-sm \${selectedListingStatus === status ? "bg-ui-bg-interactive text-ui-fg-on-color" : "bg-ui-bg-subtle text-ui-fg-base"}\`, children: label }, status)) }) }),
+const marketplaceFilterTabsMjs = `    /* @__PURE__ */ jsx2("div", { className: "border-t border-ui-border-base px-6 py-3", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", "aria-label": "Marketplace listing status filters", children: [[["", "All"], ["PENDING_APPROVAL", "Pending Approval"], ["AVAILABLE", "Available"], ["SOLD", "Sold"], ["REJECTED", "Rejected"]].map(([status, label]) => /* @__PURE__ */ jsx2(Link, { to: listingStatusPath(status), className: \`rounded-md px-3 py-1.5 text-sm \${selectedListingStatus === status ? "bg-ui-bg-interactive text-ui-fg-on-color" : "bg-ui-bg-subtle text-ui-fg-base"}\`, children: label }, status)), /* @__PURE__ */ jsx2("span", { className: "cursor-help text-ui-fg-subtle", title: "Archived products are intentionally hidden from All and lifecycle searches. Use Archived to review or restore soft-deleted products; their listing and lineage are retained.", "aria-label": "Archived products information", children: "ⓘ" })] }) }),
 `
 
-const marketplaceFilterTabsApp = `        /* @__PURE__ */ (0, import_jsx_runtime66.jsx)("div", { className: "border-t border-ui-border-base px-6 py-3", children: /* @__PURE__ */ (0, import_jsx_runtime66.jsx)("div", { className: "flex flex-wrap gap-2", "aria-label": "Marketplace listing status filters", children: [["", "All"], ["PENDING_APPROVAL", "Pending Approval"], ["AVAILABLE", "Available"], ["SOLD", "Sold"], ["REJECTED", "Rejected"]].map(([status, label]) => /* @__PURE__ */ (0, import_jsx_runtime66.jsx)(import_react_router_dom26.Link, { to: listingStatusPath(status), className: \`rounded-md px-3 py-1.5 text-sm \${selectedListingStatus === status ? "bg-ui-bg-interactive text-ui-fg-on-color" : "bg-ui-bg-subtle text-ui-fg-base"}\`, children: label }, status)) }) }),
+const marketplaceFilterTabsApp = `        /* @__PURE__ */ (0, import_jsx_runtime66.jsx)("div", { className: "border-t border-ui-border-base px-6 py-3", children: /* @__PURE__ */ (0, import_jsx_runtime66.jsxs)("div", { className: "flex flex-wrap items-center gap-2", "aria-label": "Marketplace listing status filters", children: [[["", "All"], ["PENDING_APPROVAL", "Pending Approval"], ["AVAILABLE", "Available"], ["SOLD", "Sold"], ["REJECTED", "Rejected"]].map(([status, label]) => /* @__PURE__ */ (0, import_jsx_runtime66.jsx)(import_react_router_dom26.Link, { to: listingStatusPath(status), className: \`rounded-md px-3 py-1.5 text-sm \${selectedListingStatus === status ? "bg-ui-bg-interactive text-ui-fg-on-color" : "bg-ui-bg-subtle text-ui-fg-base"}\`, children: label }, status)), /* @__PURE__ */ (0, import_jsx_runtime66.jsx)("span", { className: "cursor-help text-ui-fg-subtle", title: "Archived products are intentionally hidden from All and lifecycle searches. Use Archived to review or restore soft-deleted products; their listing and lineage are retained.", "aria-label": "Archived products information", children: "ⓘ" })] }) }),
 `
 
 const patchProductListMarketplaceFilters = (file, setup, tabs) => {
@@ -428,6 +449,20 @@ const marketplaceSkuColumnSource = `      columnHelper.display({
         },
       }),
 `
+const marketplacePriceColumnSource = `      columnHelper.display({
+        id: "pawnpawn-price",
+        header: "Price",
+        cell: ({ row }) => {
+          const price = row.original.variants?.[0]?.prices?.[0]
+          const amount = Number(price?.amount)
+          if (!price?.currency_code || !Number.isFinite(amount) || amount <= 0) return "—"
+          return new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: price.currency_code.toUpperCase(),
+          }).format(amount / 100)
+        },
+      }),
+`
 const marketplaceInventoryColumnSource = `      columnHelper.display({
         id: "pawnpawn-inventory",
         header: "Inventory",
@@ -445,6 +480,17 @@ const marketplaceSkuColumnMjs = `      columnHelper.display({
           const sku = skuSummary?.primary_sku || row.original.variants?.[0]?.sku;
           if (!sku) return "—";
           return skuSummary?.additional_count ? \`\${sku} (+\${skuSummary.additional_count} more)\` : sku;
+        }
+      }),
+`
+const marketplacePriceColumnMjs = `      columnHelper.display({
+        id: "pawnpawn-price",
+        header: "Price",
+        cell: ({ row }) => {
+          const price = row.original.variants?.[0]?.prices?.[0];
+          const amount = Number(price?.amount);
+          if (!price?.currency_code || !Number.isFinite(amount) || amount <= 0) return "—";
+          return new Intl.NumberFormat(void 0, { style: "currency", currency: price.currency_code.toUpperCase() }).format(amount / 100);
         }
       }),
 `
@@ -468,6 +514,17 @@ const marketplaceSkuColumnApp = `          columnHelper2.display({
             }
           }),
 `
+const marketplacePriceColumnApp = `          columnHelper2.display({
+            id: "pawnpawn-price",
+            header: "Price",
+            cell: ({ row }) => {
+              const price = row.original.variants?.[0]?.prices?.[0];
+              const amount = Number(price?.amount);
+              if (!price?.currency_code || !Number.isFinite(amount) || amount <= 0) return "—";
+              return new Intl.NumberFormat(void 0, { style: "currency", currency: price.currency_code.toUpperCase() }).format(amount / 100);
+            }
+          }),
+`
 const marketplaceInventoryColumnApp = `          columnHelper2.display({
             id: "pawnpawn-inventory",
             header: "Inventory",
@@ -477,7 +534,7 @@ const marketplaceInventoryColumnApp = `          columnHelper2.display({
             }
           }),
 `
-const patchProductListMarketplaceColumns = (file, skuColumn, inventoryColumn) => {
+const patchProductListMarketplaceColumns = (file, priceColumn, skuColumn, inventoryColumn) => {
   let source = fs.readFileSync(file, "utf8")
   const statusAnchor = file.endsWith("app.js")
     ? '          columnHelper2.display({\n            id: "pawnpawn-listing-status",'
@@ -486,38 +543,46 @@ const patchProductListMarketplaceColumns = (file, skuColumn, inventoryColumn) =>
     throw new Error(`Unsupported Dashboard product marketplace columns bundle: ${file}`)
   }
 
-  // Replace the complete PawnPawn SKU/Inventory section before Listing
+  // Replace the complete PawnPawn Price/SKU/Inventory section before Listing
   // Status. This makes the patch idempotent and repairs dashboard bundles
   // written by older script versions that inserted the columns twice.
-  const skuMarker = 'id: "pawnpawn-sku"'
-  if (source.includes(skuMarker)) {
-    const firstSku = source.indexOf(skuMarker)
-    const baseIndex = source.lastIndexOf("base[1],", firstSku)
+  const marketplaceColumnMarkers = ['id: "pawnpawn-price"', 'id: "pawnpawn-sku"', 'id: "pawnpawn-inventory"']
+  const markerIndices = marketplaceColumnMarkers.map((marker) => source.indexOf(marker)).filter((index) => index >= 0)
+  if (markerIndices.length) {
+    const firstColumn = Math.min(...markerIndices)
+    const baseIndex = source.lastIndexOf("base[1],", firstColumn)
     const columnStart = source.indexOf("\n", baseIndex) + 1
     const statusStart = source.indexOf(statusAnchor)
-    source = `${source.slice(0, columnStart)}${skuColumn}${inventoryColumn}${source.slice(statusStart)}`
+    source = `${source.slice(0, columnStart)}${priceColumn}${skuColumn}${inventoryColumn}${source.slice(statusStart)}`
   } else {
-    source = source.replace(statusAnchor, `${skuColumn}${inventoryColumn}${statusAnchor}`)
+    source = source.replace(statusAnchor, `${priceColumn}${skuColumn}${inventoryColumn}${statusAnchor}`)
   }
   source = source.replace(
     "variants.id,thumbnail",
-    "variants.id,variants.sku,variants.inventory_quantity,thumbnail"
+    "variants.id,variants.sku,variants.inventory_quantity,variants.prices,thumbnail"
+  )
+  source = source.replace(
+    "variants.id,variants.sku,variants.inventory_quantity,thumbnail",
+    "variants.id,variants.sku,variants.inventory_quantity,variants.prices,thumbnail"
   )
   fs.writeFileSync(file, source)
 }
 
 patchProductListMarketplaceColumns(
   path.join(dashboardRoot, "src/routes/products/product-list/components/product-list-table/product-list-table.tsx"),
+  marketplacePriceColumnSource,
   marketplaceSkuColumnSource,
   marketplaceInventoryColumnSource
 )
 patchProductListMarketplaceColumns(
   path.join(dashboardRoot, "dist/product-list-UKJVYCMV.mjs"),
+  marketplacePriceColumnMjs,
   marketplaceSkuColumnMjs,
   marketplaceInventoryColumnMjs
 )
 patchProductListMarketplaceColumns(
   path.join(dashboardRoot, "dist/app.js"),
+  marketplacePriceColumnApp,
   marketplaceSkuColumnApp,
   marketplaceInventoryColumnApp
 )
@@ -583,6 +648,23 @@ patchProductListArchivedFilter(path.join(dashboardRoot, "dist/chunk-R65S6ZZV.mjs
 patchProductListArchivedFilter(path.join(dashboardRoot, "dist/app.js"))
 patchProductListArchivedFilter(path.join(dashboardRoot, "src/routes/products/product-list/components/product-list-table/product-list-table.tsx"))
 patchProductListArchivedFilter(path.join(dashboardRoot, "dist/product-list-UKJVYCMV.mjs"))
+
+// Existing dependency trees can already contain the lifecycle tabs from an
+// earlier patch run. Add the tooltip separately so upgrades receive the
+// Archived explanation without requiring a clean node_modules installation.
+const patchArchivedInfoIndicator = (file) => {
+  let source = fs.readFileSync(file, "utf8")
+  if (!source.includes("Marketplace listing status filters") || source.includes("Archived products information")) return
+  if (file.endsWith(".tsx")) {
+    source = source.replace(
+      "          ))}\n        </div>\n      </div>\n      <_DataTable",
+      "          ))}\n          <span\n            className=\"cursor-help text-ui-fg-subtle\"\n            title=\"Archived products are intentionally hidden from All and lifecycle searches. Use Archived to review or restore soft-deleted products; their listing and lineage are retained.\"\n            aria-label=\"Archived products information\"\n          >ⓘ</span>\n        </div>\n      </div>\n      <_DataTable"
+    )
+  }
+  fs.writeFileSync(file, source)
+}
+
+patchArchivedInfoIndicator(path.join(dashboardRoot, "src/routes/products/product-list/components/product-list-table/product-list-table.tsx"))
 
 // Include Medusa's soft-delete timestamp and render it as INACTIVE regardless
 // of the historical Listing state retained for lineage and audit records.

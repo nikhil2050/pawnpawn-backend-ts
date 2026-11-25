@@ -3,6 +3,7 @@ import {
   assertSucceededDemoPayment,
   createDemoPaymentIntent,
   createPaymentFingerprint,
+  getStripeWebhookCheckout,
   isDemoPaymentMode,
   StripePaymentError,
 } from "../stripe-payment"
@@ -12,6 +13,7 @@ const expected = {
   currency_code: "eur",
   customer_id: "cus_buyer",
   region_id: "reg_eu_native",
+  variant_ids: ["variant_a", "variant_b"],
   item_fingerprint: createPaymentFingerprint("cus_buyer", "reg_eu_native", ["variant_b", "variant_a"]),
 }
 
@@ -22,6 +24,7 @@ const succeededIntent = {
   metadata: {
     pawnpawn_customer_id: expected.customer_id,
     pawnpawn_region_id: expected.region_id,
+    pawnpawn_variant_ids: "variant_a,variant_b",
     pawnpawn_item_fingerprint: expected.item_fingerprint,
   },
 }
@@ -56,5 +59,19 @@ describe("Stripe PaymentIntent reconciliation", () => {
     expect(() => assertSucceededDemoPayment(intent.id, expected)).not.toThrow()
     expect(() => assertSucceededDemoPayment("demo_pi_forged", expected)).toThrow(StripePaymentError)
     if (priorSecret) process.env.STRIPE_SECRET_KEY = priorSecret
+  })
+
+  it("recovers a signed-payment checkout only when Stripe metadata has customer, Region, and Variant IDs", () => {
+    expect(getStripeWebhookCheckout({ ...succeededIntent, id: "pi_recoverable" } as any)).toEqual({
+      customer_id: expected.customer_id,
+      region_id: expected.region_id,
+      variant_ids: expected.variant_ids,
+      payment_intent_id: "pi_recoverable",
+    })
+    expect(() => getStripeWebhookCheckout({
+      ...succeededIntent,
+      id: "pi_incomplete",
+      metadata: { ...succeededIntent.metadata, pawnpawn_variant_ids: "" },
+    } as any)).toThrow("missing PawnPawn checkout metadata")
   })
 })

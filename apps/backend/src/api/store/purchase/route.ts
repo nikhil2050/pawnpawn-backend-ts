@@ -1,5 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { executeStripeCheckout, PurchaseError } from "../../../workflows/purchase/dummy-checkout"
+import { isDemoPaymentIntent } from "../../../services/stripe-payment"
 
 const customerIdFrom = (req: MedusaRequest) => (req as any).auth_context?.actor_id as string | undefined
 
@@ -16,7 +17,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const order = await executeStripeCheckout(req.scope, customerId, req.body as any)
     return res.status(201).json({
       order,
-      payment: { status: "CAPTURED", provider: "stripe", payment_intent_id: (req.body as any).payment_intent_id },
+      payment: {
+        status: "CAPTURED",
+        provider: isDemoPaymentIntent((req.body as any).payment_intent_id ?? "") ? "demo" : "stripe",
+        payment_intent_id: (req.body as any).payment_intent_id,
+      },
       fulfillment: { status: "WAITING_FOR_ARRIVAL", per_line_item: true },
     })
   } catch (error) {

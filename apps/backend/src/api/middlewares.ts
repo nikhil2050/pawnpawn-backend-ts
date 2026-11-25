@@ -133,6 +133,13 @@ export default defineMiddlewares({
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
     {
+      // Stripe signs the exact bytes, so retain rawBody alongside parsed JSON.
+      // See documentation/AI_CONTEXT.md, "Stripe PaymentIntent checkout".
+      matcher: '/webhooks/stripe',
+      methods: ['POST'],
+      bodyParser: { preserveRawBody: true },
+    },
+    {
       // Use a wildcard because Medusa's Admin router may append a route suffix
       // while resolving the native product create handler.
       matcher: '/admin/products*',
